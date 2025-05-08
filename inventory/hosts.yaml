@@ -1,0 +1,8 @@
+all:
+  hosts:
+    gadhqapgha02.cce3.gpc:
+      ansible_host: 10.5.151.107
+      tags:
+        - build
+        - hq
+        - orange
