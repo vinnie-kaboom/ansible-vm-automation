@@ -10,6 +10,7 @@ This document provides an overview of the repository structure and outlines the 
 
 The repository is organized into several key directories, each serving a specific purpose:
 
+<pre><code>
 gad-infra-ansible/
 ├── inventory/
 │   ├── hosts.yaml              # Defines target hosts and groups
@@ -72,7 +73,7 @@ gad-infra-ansible/
 ├── library/                    # Custom Ansible modules
 │   └── my_custom_module.py
 └── README.md
-
+</code></pre>
 ### `inventory/`
 
 This directory contains information about the target systems Ansible will manage.
@@ -127,4 +128,4 @@ To ensure our Ansible automation remains effective and easy to manage, we adhere
 7.  **Version Control:** All changes to this repository are managed using Git. We follow standard Git workflows (e.g., using branches, pull requests) to ensure code quality and facilitate collaboration.
 8.  **Testing:** While not explicitly in the structure, we aim to eventually incorporate testing frameworks to automatically test our roles and playbooks.
 
-## Happy automating!
+# *Happy automating!*
