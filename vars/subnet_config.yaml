@@ -1,0 +1,271 @@
+subnet_configurations:
+  "10.5.144.0/26":
+    location: va
+    zone: red
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.144.64/26":
+    location: va
+    zone: orange_dev
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.144.128/26":
+    location: va
+    zone: orange_dev
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.144.192/26":
+    location: va
+    zone: purple
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.147.64/26":
+    location: va
+    zone: orange_eng
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.145.0/24":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.147.128/25":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.147.0/26":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.146.192/27":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.130.0/24":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.133.0/25":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.133.128/27":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.133.160/27":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.133.192/27":
+    location: va
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.146.0/26":
+    location: va
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.146.64/26":
+    location: va
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.154.0/24":
+    location: va
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.132.0/24":
+    location: va
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.152.0/26":
+    location: va
+    zone: blue
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.136.0/25":
+    location: va
+    zone: pink
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.157.64/27":
+    location: va
+    zone: pink
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.153.0/25":
+    location: va
+    zone: brown
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.148.0/26":
+    location: hq
+    zone: red
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.148.64/26":
+    location: hq
+    zone: orange_dev
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.148.128/26":
+    location: hq
+    zone: orange_dev
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.148.192/26":
+    location: hq
+    zone: purple
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.151.64/26":
+    location: hq
+    zone: orange_eng
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.149.0/24":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.151.0/26":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.150.192/27":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.135.0/25":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.135.128/27":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.135.160/27":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.135.192/27":
+    location: hq
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.150.0/26":
+    location: hq
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.150.64/26":
+    location: hq
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.155.0/24":
+    location: hq
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.134.0/24":
+    location: hq
+    zone: green
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.152.128/26":
+    location: hq
+    zone: blue
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.137.0/25":
+    location: hq
+    zone: pink
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.157.96/27":
+    location: hq
+    zone: pink
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.153.128/25":
+    location: hq
+    zone: brown
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.156.0/26":
+    location: ma 
+    zone: orange_eng 
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "10.5.156.128/26":
+    location: ma 
+    zone: gray
+    dns_servers:
+    ntp_servers:
+    gateway:
+  "192.168.222.0/24":
+    location: mel
+    zone: blue
+    dns_servers:
+    ntp_servers:
+    gateway:
