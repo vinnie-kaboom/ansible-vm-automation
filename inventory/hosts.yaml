@@ -2,7 +2,12 @@ all:
   hosts:
     gadhqapgha02.cce3.gpc:
       ansible_host: 10.5.151.107
+      subnet: 10.5.151.64/26
       tags:
         - build
-        - hq
-        - orange
+    gadhqwsdev08.cce3.gpc:
+      ansible_host: 10.5.151.71
+      subnet: 10.5.151.64/26
+      tags:
+        - wsdev
+
