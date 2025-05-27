@@ -12,4 +12,4 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook -i inventory.ini ping_check.yml
+          ansible-playbook -i inventory.ini ping.yml
