@@ -1,0 +1,118 @@
+zones:
+  red:
+    va:
+      primary_dns: 10.5.144.33
+      secondary_dns: 10.5.148.33
+      primary_ntp: 10.5.144.33
+      secondary_ntp: 10.5.148.33
+      domain_controller: 10.5.144.33
+    hq:
+      primary_dns: 10.5.148.33
+      secondary_dns: 10.5.144.33
+      primary_ntp: 10.5.148.33
+      secondary_ntp: 10.5.144.33
+      domain_controller: 10.5.148.33
+  orange_dev:
+    va:
+      primary_dns: 10.5.144.81
+      secondary_dns:
+      primary_ntp: 10.5.144.81
+      secondary_ntp:
+      domain_controller: 10.5.144.81
+  orange_eng:
+    va:
+      primary_dns: 10.5.147.75
+      secondary_dns: 10.5.151.75
+      primary_ntp: 10.5.147.75
+      secondary_ntp: 10.5.151.75
+      domain_controller: 10.5.147.75
+    hq:
+      primary_dns: 10.5.151.75
+      secondary_dns: 10.5.147.75
+      primary_ntp: 10.5.151.75
+      secondary_ntp: 10.5.147.75
+      domain_controller: 10.5.151.75
+    ma:
+      primary_dns: 10.5.156.11
+      secondary_dns: 10.5.151.75
+      primary_ntp: 10.5.156.11
+      secondary_ntp: 10.5.151.75
+      domain_controller: 10.5.156.11
+  gray:
+    va:
+      primary_dns: 10.5.145.21
+      secondary_dns: 10.5.149.21
+      primary_ntp: 10.5.145.21
+      secondary_ntp: 10.5.149.21
+      domain_controller: 10.5.145.21
+    hq:
+      primary_dns: 10.5.149.21
+      secondary_dns: 10.5.145.21
+      primary_ntp: 10.5.149.21
+      secondary_ntp: 10.5.145.21
+      domain_controller: 10.5.149.21
+  green:
+    va:
+      primary_dns: 10.5.154.139
+      secondary_dns: 10.5.155.139
+      primary_ntp: 10.5.154.139
+      secondary_ntp: 10.5.155.139
+      domain_controller: 10.5.154.139
+    hq:
+      primary_dns: 10.5.155.139
+      secondary_dns: 10.5.154.139
+      primary_ntp: 10.5.155.139
+      secondary_ntp: 10.5.154.139
+      domain_controller: 10.5.155.139
+  purple:
+    va:
+      primary_dns: 10.5.144.33
+      secondary_dns: 10.5.148.33
+      primary_ntp: 10.5.144.33
+      secondary_ntp: 10.5.148.33
+      domain_controller: 10.5.144.33
+    hq:
+      primary_dns: 10.5.148.33
+      secondary_dns: 10.5.144.33
+      primary_ntp: 10.5.148.33
+      secondary_ntp: 10.5.144.33
+      domain_controller: 10.5.148.33
+  blue:
+    va:
+      primary_dns:
+      secondary_dns:
+      primary_ntp:
+      secondary_ntp:
+      domain_controller:
+    hq:
+      primary_dns:
+      secondary_dns:
+      primary_ntp:
+      secondary_ntp:
+      domain_controller:
+  pink:
+    va:
+      primary_dns: 10.5.136.29
+      secondary_dns: 10.5.137.29
+      primary_ntp: 10.5.136.29
+      secondary_ntp: 10.5.137.29
+      domain_controller: 10.5.136.29
+    hq:
+      primary_dns: 10.5.137.29
+      secondary_dns: 10.5.136.29
+      primary_ntp: 10.5.137.29
+      secondary_ntp: 10.5.136.29
+      domain_controller: 10.5.137.29
+  brown:
+    va:
+      primary_dns: 10.5.153.29
+      secondary_dns: 10.5.153.157
+      primary_ntp: 10.5.153.29
+      secondary_ntp: 10.5.153.157
+      domain_controller: 10.5.153.29
+    hq:
+      primary_dns: 10.5.153.157
+      secondary_dns: 10.5.153.29
+      primary_ntp: 10.5.153.157
+      secondary_ntp: 10.5.153.29
+      domain_controller: 10.5.153.157
