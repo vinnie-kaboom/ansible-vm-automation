@@ -1,4 +1,4 @@
-name: Deploy with Ansible
+name: Test with Ping
 
 on:
   workflow_dispatch:
