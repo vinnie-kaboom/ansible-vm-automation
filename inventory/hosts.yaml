@@ -5,6 +5,11 @@ all:
       subnet: 10.5.151.64/26
       tags:
         - build
+    gadhqwsdev06.cce3.gpc:
+      ansible_host: 10.5.151.108
+      subnet: 10.5.151.64/26
+      tags:
+        -wsdev
     gadhqwsdev08.cce3.gpc:
       ansible_host: 10.5.151.71
       subnet: 10.5.151.64/26
