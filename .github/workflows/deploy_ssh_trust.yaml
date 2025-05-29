@@ -36,7 +36,7 @@ jobs:
           ANSIBLE_BECOME_PASS: ${{ secrets.GHARUNNER_PW }} 
         run: >
             ansible-playbook 
-            -i inventory/host.yaml 
+            -i inventory/hosts.yaml 
             playbooks/set_ssh_trust.yaml 
             -u s-gharunner 
             --ask-pass 
