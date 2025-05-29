@@ -38,6 +38,6 @@ jobs:
             ansible-playbook 
             -i inventory/host.yaml 
             playbooks/set_ssh_trust.yaml 
-            -u {{ s-gharunner }}  
+            -u s-gharunner 
             --ask-pass 
             --ask-become-pass 
