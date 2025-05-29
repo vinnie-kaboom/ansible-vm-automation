@@ -1,0 +1,49 @@
+---
+- name: Set up SSH trust for Ansible Runner on target machines
+  hosts: all  # Or a specific group, e.g., 'new_servers'
+  gather_facts: true # <--- IMPORTANT: We need to gather facts to check the OS family
+  # You'll connect using the initial password or other method for the first time
+  # Be careful with host_key_checking; see important note below.
+
+  vars:
+    # Path to the public key file on the Ansible runner machine (your self-hosted runner)
+    # This is the key that will be pushed to the target machines.
+    runner_public_key_path: "~/.ssh/id_rsa_runner.pub"
+
+    # The user on the target machine that Ansible will initially connect as
+    # AND where the public key will be added.
+    # This user needs password access for the first connection.
+    target_ssh_user: "s-gharunner" # e.g., 'ubuntu', 'ec2-user', 'deploy'
+
+  tasks:
+    - name: Read the Ansible runner's public SSH key content
+      ansible.builtin.slurp:
+        src: "{{ runner_public_key_path }}"
+      delegate_to: localhost # This task runs on the Ansible control node (the runner itself)
+      run_once: true         # Only read the key once, even if targeting multiple hosts
+      register: runner_key_content
+
+    - name: Add Ansible runner's public key to target's authorized_keys
+      ansible.builtin.authorized_key:
+        user: "{{ target_ssh_user }}"
+        key: "{{ runner_key_content.content | b64decode }}" # Decode the base64 content
+        state: present
+      become: true # Use sudo/su on the target
+      become_user: "{{ target_ssh_user }}" # Ensure sudo is for the specified target_ssh_user
+      # Only run this task if the target system's OS family is Linux
+      when: ansible_os_family != 'Windows'
+
+    - name: Ensure target's host key is added to runner's known_hosts (security best practice)
+      community.general.known_hosts:
+        name: "{{ inventory_hostname }}"
+        key: "{{ inventory_hostname }}" # Or use `key: "{{ hostvars[inventory_hostname].ansible_host }}"` for IP
+        state: present
+        hash_hostname: true
+      delegate_to: localhost # This task runs on the Ansible control node (the runner itself)
+      # This task runs on localhost, so its execution depends on the overall play,
+      # but it's not directly conditional on the remote host's OS.
+      # If you had a host that wasn't Linux, this task would still run for it.
+      # If you only want to add known_hosts for Linux hosts, you might need a
+      # more complex strategy, perhaps by using 'run_once: true' with a 'when'
+      # condition that aggregates the results of the previous task.
+      # For simplicity here, it will run if any host in the play was processed.
