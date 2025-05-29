@@ -1,4 +1,4 @@
-name: Deploy with Ansible
+name: Test with Ping
 
 on:
   workflow_dispatch:
@@ -12,4 +12,4 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook -i inventory.ini ping.yml
+          ansible-playbook -i inventory/hosts.yaml playbooks/ping.yaml
