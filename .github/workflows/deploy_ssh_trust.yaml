@@ -34,7 +34,7 @@ jobs:
           # NOTE: These variable names are specific to Ansible.
           ANSIBLE_SSH_PASS: ${{ secrets.GHARUNNER_PW }}
           ANSIBLE_BECOME_PASS: ${{ secrets.GHARUNNER_PW }} 
-          run: >
+        run: >
             ansible-playbook 
             -i inventory/host.yaml 
             playbooks/set_ssh_trust.yaml 
