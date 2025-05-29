@@ -23,7 +23,7 @@
       run_once: true         # Only read the key once, even if targeting multiple hosts
       register: runner_key_content
 
-    - name: Add Ansible runner's public key to target's authorized_keys
+    - name: Add Ansible runner's public key to target's authorized_keys, when Linux
       ansible.builtin.authorized_key:
         user: "{{ target_ssh_user }}"
         key: "{{ runner_key_content.content | b64decode }}" # Decode the base64 content

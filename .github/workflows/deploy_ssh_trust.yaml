@@ -1,0 +1,45 @@
+name: Deploy with Ansible SSH Trust
+
+on:
+  workflow_dispatch: # Allows manual trigger for testing
+
+jobs:
+  setup_ssh_trust:
+    runs-on: self-hosted # Or your specific runner labels (e.g., [self-hosted, linux])
+
+    # Important: Ensure your runner has its SSH key pair generated
+    # at ~/.ssh/id_rsa_runner and ~/.ssh/id_rsa_runner.pub
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Ansible Environment Variables
+        run: |
+          # The ANISBLE_HOST_KEY_CHECKING=False is crucial for the first connection
+          # where the host key isn't yet known by the runner.
+          # The playbook's 'known_hosts' task will then add it securely for future runs.
+          echo "ANSIBLE_HOST_KEY_CHECKING=False" >> $GITHUB_ENV
+
+          # This tells Ansible to prompt for SSH password
+          echo "ANSIBLE_ASK_PASS=True" >> $GITHUB_ENV
+          echo "ANSIBLE_ASK_BECOME_PASS=True" >> $GITHUB_ENV # Only if using become and password needed for sudo
+
+      - name: Run Ansible Playbook to Set Up SSH Trust
+        env:
+          # Pass the GitHub Secret value into an environment variable
+          # that Ansible will automatically pick up for --ask-pass and --ask-become-pass
+          # The name must match what Ansible expects for SSH password (ANSIBLE_SSH_PASS)
+          # and sudo password (ANSIBLE_BECOME_PASS).
+          # NOTE: These variable names are specific to Ansible.
+          ANSIBLE_SSH_PASS: ${{ secrets.GHARUNNER_PW }}
+          ANSIBLE_BECOME_PASS: ${{ secrets.GHARUNNER_PW }} 
+        run: |
+          # Using the setup_ssh_trust.yml playbook you provided,
+          # and the inventory/host.yaml file
+          ansible-playbook \
+            -i inventory/host.yaml \
+            playbooks/set_ssh_trust.yaml \
+            -u {{ s-gharunner }} \ # Ensure this matches your playbook's target_ssh_user
+            --ask-pass \
+            --ask-become-pass # Only if you enabled this in the playbook and need sudo password
