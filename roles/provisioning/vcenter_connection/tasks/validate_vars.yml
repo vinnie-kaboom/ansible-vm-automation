@@ -1,0 +1,53 @@
+---
+# vCenter Connection Role - Variable Validation Tasks
+# Validates required variables for vCenter connectivity
+
+- name: "Validate vCenter connection variables"
+  assert:
+    that:
+      - vcenter_host is defined
+      - vcenter_user is defined
+      - vcenter_user_password is defined
+    fail_msg: "Missing required vCenter connection variables: vcenter_host, vcenter_user, vcenter_user_password"
+    success_msg: "vCenter connection variables validated successfully"
+  tags:
+    - vcenter
+    - validation
+    - variables
+
+- name: "Validate vCenter host format"
+  assert:
+    that:
+      - vcenter_host is string
+      - vcenter_host | length > 0
+    fail_msg: "vcenter_host must be a non-empty string"
+    success_msg: "vCenter host format validated"
+  tags:
+    - vcenter
+    - validation
+    - format
+
+- name: "Validate vCenter credentials format"
+  assert:
+    that:
+      - vcenter_user is string
+      - vcenter_user | length > 0
+      - vcenter_user_password is string
+      - vcenter_user_password | length > 0
+    fail_msg: "vCenter credentials must be non-empty strings"
+    success_msg: "vCenter credentials format validated"
+  tags:
+    - vcenter
+    - validation
+    - credentials
+
+- name: "Set vCenter connection values from inventory variables"
+  set_fact:
+    vcenter_connection_timeout: "{{ config_vcenter_connection_timeout }}"
+    vcenter_connection_retry_attempts: "{{ config_vcenter_connection_retry_attempts }}"
+    vcenter_connection_retry_delay: "{{ config_vcenter_connection_delay }}"
+    vcenter_connection_validate_certs: "{{ config_vcenter_connection_validate_certs }}"
+  tags:
+    - vcenter
+    - validation
+    - config

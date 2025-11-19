@@ -1,0 +1,8 @@
+---
+# VMware Provisioning Role Configuration
+# This file contains default settings for VM creation and configuration
+
+# Template Configuration
+vmware_template:
+  name: "{{ config_vm_template }}"
+

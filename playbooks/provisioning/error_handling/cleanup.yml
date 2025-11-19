@@ -1,0 +1,49 @@
+---
+- name: "Error Handling and Cleanup"
+  hosts: "{{ ansible_host | default('all') }}"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: local
+
+  vars:
+  # All variables (config_*, vcenter_*) are inherited from inventory
+  # No need to redefine them here to avoid circular references
+
+  tasks:
+    - name: "Check if cleanup is needed"
+      block:
+        - name: "Get VM power state"
+          community.vmware.vmware_guest_info:
+            hostname: "{{ vcenter_host }}"
+            username: "{{ vcenter_user }}"
+            password: "{{ vcenter_user_password }}"
+            validate_certs: "{{ vcenter_validate_certs }}"
+            name: "{{ config_vm_name }}"
+            datacenter: "{{ config_vcenter_datacenter }}"
+          register: vm_power_info
+          ignore_errors: true
+
+        - name: "Power off VM if running"
+          community.vmware.vmware_guest_powerstate:
+            hostname: "{{ vcenter_host }}"
+            username: "{{ vcenter_user }}"
+            password: "{{ vcenter_user_password }}"
+            validate_certs: "{{ vcenter_validate_certs }}"
+            name: "{{ config_vm_name }}"
+            state: powered-off
+          when: vm_power_info.failed == false
+          ignore_errors: true
+
+        - name: "Remove VM"
+          community.vmware.vmware_guest:
+            hostname: "{{ vcenter_host }}"
+            username: "{{ vcenter_user }}"
+            password: "{{ vcenter_user_password }}"
+            validate_certs: "{{ vcenter_validate_certs }}"
+            name: "{{ config_vm_name }}"
+            datacenter: "{{ config_vcenter_datacenter }}"
+            state: absent
+          when: vm_power_info.failed == false
+          ignore_errors: true
+
+      when: cleanup_on_failure | bool

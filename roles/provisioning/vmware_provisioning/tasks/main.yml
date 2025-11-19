@@ -1,0 +1,21 @@
+---
+# Variables are now loaded from the main playbook vars section
+# This ensures proper variable precedence and availability
+
+- name: "Pre-flight validation"
+  include_tasks: validate.yml
+  tags:
+    - validation
+    - always
+
+- name: "Provision VM"
+  include_tasks: provision.yml
+  tags: provision
+  when: not (dry_run | default(false) | bool)
+
+# Commented out based on template
+#- name: "Install VMware Tools (skipped)"
+#  debug:
+#    msg: "VMware Tools installation skipped - template already has tools"
+#  when: (skip_tools_install | default(true) | bool)
+#  tags: provision

@@ -1,0 +1,28 @@
+---
+- name: "Linux VM Provisioning from Template"
+  hosts: "{{ ansible_host | default('all') }}"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: local
+  serial: 1
+  tags: [provision, linux]
+
+  pre_tasks:
+    - name: "Display provisioning method"
+      debug:
+        msg: "Using template-based provisioning method"
+
+  roles:
+    - role: provisioning/vmware_provisioning
+      tags: [provision]
+      vars:
+        vm_provisioning_method: template
+
+    - role: provisioning/vm_validation
+      tags: [validation]
+      vars:
+        vm_provisioning_method: template
+        # Map to expected variable names for validation role
+        vcenter_datacenter: "{{ config_vcenter_datacenter }}"
+        vcenter_cluster: "{{ config_vcenter_cluster }}"
+        vcenter_datastore: "{{ config_vcenter_datastore }}"

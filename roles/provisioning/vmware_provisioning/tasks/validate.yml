@@ -1,0 +1,31 @@
+---
+# Pre-flight validation for VMware provisioning
+# This file performs basic validation before VM provisioning begins
+
+- name: "Validate required variables for VM provisioning"
+  assert:
+    that:
+      - config_vm_template is defined
+      - config_vm_template | length > 0
+      - config_vcenter_datacenter is defined
+      - config_vcenter_cluster is defined
+      - config_vm_folder is defined
+      - config_vcenter_datastore is defined
+      - config_vm_network is defined
+    fail_msg: "Required variables for VM provisioning are not set. Check configuration."
+    success_msg: "All required variables for VM provisioning are set."
+  tags:
+    - validation
+    - always
+
+- name: "Validate vCenter connection variables"
+  assert:
+    that:
+      - vcenter_host is defined
+      - vcenter_user is defined
+      - vcenter_user_password is defined
+    fail_msg: "vCenter connection variables are not set. Check inventory/group_vars/all.yml."
+    success_msg: "vCenter connection variables are set."
+  tags:
+    - validation
+    - always

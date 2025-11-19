@@ -1,0 +1,24 @@
+# GAD Ansible VM Automation - Code Owners
+# This file defines who should review changes to specific files
+
+# Global approvers for VM provisioning
+* @vincent-zamora
+
+# Critical VM configuration files require manager approval
+inventory/group_vars/cce3_gpc.yml @vincent-zamora @gary-dawkins @Jeff-monroe @nathaniel-batey
+inventory/host_vars/ @vincent-zamora @gary-dawkins @Jeff-monroe @nathaniel-batey
+
+# Workflow files require manager approval
+.github/workflows/ @vincent-zamora
+
+# Playbooks require manager approval
+playbooks/ @vincent-zamora
+
+# Roles require manager approval
+roles/ @vincent-zamora
+
+# Inventory files require manager approval
+inventory/ @vincent-zamora
+
+# Documentation changes
+*.md @vincent-zamora

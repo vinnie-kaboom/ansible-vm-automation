@@ -1,0 +1,28 @@
+---
+galaxy_info:
+  author: Vincent Zamora
+  description: VMware VM provisioning role - Provisions VMs from templates with idempotent operations
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 9
+  galaxy_tags:
+    - vmware
+    - provisioning
+    - system
+    - virtualization
+    - cloud
+    - infrastructure
+
+collections:
+  - community.vmware
+  - community.general
+
+dependencies:
+  - role: provisioning/vcenter_connection
+    tags: ['always']
+  # vm_validation is now called directly from the main playbook
+  # - role: provisioning/vm_validation
+  #   tags: ['validation']

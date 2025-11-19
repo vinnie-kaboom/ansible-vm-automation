@@ -1,0 +1,48 @@
+---
+# ===================================================================================
+# ALL HOSTS - Global Configuration
+# ===================================================================================
+#
+# PURPOSE:
+#   Global settings that apply to all hosts in the inventory
+#   These can be overridden by more specific group_vars or host_vars
+# ===================================================================================
+
+# --- vCenter Connection Variables ---
+# These reference GitHub Secrets passed through the workflow
+# Variable names aligned with join_domain pattern
+vcenter_host: "{{ secrets.VCENTER_HOSTNAME | default('') }}"
+vcenter_user: "{{ secrets.VCENTER_USERNAME | default('') }}"
+vcenter_user_password: "{{ secrets.VCENTER_PASSWORD | default('') }}"
+vcenter_validate_certs: "{{ secrets.VCENTER_VALIDATE_CERTS | default('false') | bool }}"
+
+# --- vCenter Infrastructure Variables (mapped from config_* variables) ---
+# These are set in group_vars and need to be available to roles
+vcenter_datacenter: "{{ config_vcenter_datacenter | default('') }}"
+vcenter_cluster: "{{ config_vcenter_cluster | default('') }}"
+vcenter_datastore: "{{ config_vcenter_datastore | default('') }}"
+vcenter_resource_pool: "{{ config_vcenter_resource_pool | default('') }}"
+
+# --- Global Error Handling ---
+config_vm_max_retries: 3
+config_vm_retry_delay: 30
+config_vm_async_retries: 3
+config_vm_async_delay: 60
+
+# --- Global Validation Settings ---
+config_vm_enable_validation: true
+config_vm_validation_enable_logging: true
+config_vm_validation_log_level: "INFO"
+config_vm_validation_log_path: "logs"
+config_vm_validation_log_format: "json"
+
+# --- Global System Settings ---
+config_vm_timezone: "UTC"
+config_vm_update_system: true
+config_vm_update_system_security: true
+config_vm_enable_services: true
+config_vm_start_services: true
+
+# --- Logging Settings ---
+log_path: "logs"
+enable_connection_logging: false

@@ -1,0 +1,14 @@
+---
+- name: "Windows VM Provisioning"
+  hosts: "{{ ansible_host | default('all') }}"
+  any_errors_fatal: true
+  gather_facts: true
+  connection: local
+
+  vars:
+    config_guest_os_type: windows
+
+  roles:
+    - role: provisioning/vmware_provisioning
+      tags: provision
+      when: not (dry_run | default(false) | bool)

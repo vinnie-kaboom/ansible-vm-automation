@@ -1,0 +1,77 @@
+# Ansible sensitive files
+.vault_pass
+*.vault_pass
+# Note: vault/ folder itself is NOT ignored - only password files are ignored
+
+# Temporary secrets file created by workflows
+.ansible-extra-vars.json
+*.ansible-extra-vars.json
+
+# VM info files (contain IP addresses and sensitive info)
+vm_info_*.txt
+
+# Ansible fact cache
+/tmp/ansible_facts_cache/
+ansible_facts_cache/
+
+# Ansible retry files
+*.retry
+
+# SSH keys (if stored in project)
+*.pem
+*.key
+id_rsa*
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Virtual environments
+venv/
+env/
+.env
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Temporary files
+*.tmp
+*.temp
+temp/
+tmp/
+
+# Downloaded collections (for air-gapped setups)
+vmware_collections_download/
+vmware_collections_airgapped/
+*.tar.gz
+python_deps/
+
+# Local configuration overrides
+local_config.yml
+local_vars.yml
+
+# Backup files
+*.bak
+*.backup
+
+# Test files and outputs
+test_output/
+test_results/ 

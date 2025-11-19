@@ -1,0 +1,23 @@
+---
+- name: "Ensure log directory exists"
+  file:
+    path: "{{ log_path }}"
+    state: directory
+    mode: "{{ config_log_dir_permissions }}"
+  when: enable_connection_logging | bool
+
+- name: "Initialize connection log"
+  copy:
+    content: |
+      # vCenter Connection Log
+      # Started: {{ ansible_date_time.iso8601 }}
+      # Host: {{ vcenter_host }}
+    dest: "{{ log_path }}/connection_{{ ansible_date_time.epoch }}.log"
+    mode: "{{ config_log_file_permissions }}"
+  when: enable_connection_logging | bool
+
+- name: "Log connection attempt"
+  lineinfile:
+    path: "{{ log_path }}/connection_{{ ansible_date_time.epoch }}.log"
+    line: "{{ ansible_date_time.iso8601 }} - Connection attempt to {{ vcenter_host }}"
+  when: enable_connection_logging | bool

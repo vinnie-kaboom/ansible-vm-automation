@@ -1,0 +1,47 @@
+---
+# Main Site Playbook - VM Provisioning Automation
+#
+# PLAYBOOK PURPOSE:
+#   Complete end-to-end VM provisioning automation
+#   Orchestrates VM creation, validation, and testing
+#
+# WORKFLOW OVERVIEW:
+#   1. Test vCenter connectivity and permissions
+#   2. Provision Linux VMs in vCenter
+#   3. Provision Windows VMs in vCenter (if needed)
+#   4. Validate VM configuration and connectivity
+#   5. Perform post-provisioning checks
+#
+# USAGE:
+#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags provision
+#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --limit cce3_gpc_linux --tags provision
+#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags validation
+#
+# HOST GROUPS:
+#   - runner: GitHub Actions runner / control node
+#   - cce3_gpc_linux: Linux virtual machines to provision
+#   - cce3_gpc_windows: Windows virtual machines to provision
+
+# ================================================================================
+# VM PROVISIONING ORCHESTRATION
+# ================================================================================
+
+# Import vCenter connectivity testing
+- import_playbook: provisioning/testing/test_vcenter.yml
+  tags: [validation, vcenter, connectivity]
+
+# Import Linux VM provisioning playbook
+- import_playbook: provisioning/provision/linux/provision_vm.yml
+  tags: [provision, linux]
+
+# Import Windows VM provisioning playbook
+#- import_playbook: provisioning/provision/windows/provision_windows_vm.yml
+#  tags: [provision, windows]
+
+# Import VM status and validation checks (only run after VMs are provisioned)
+- import_playbook: provisioning/testing/check_vm_status.yml
+  tags: [status, verification, post_provision]
+
+# Import cleanup operations (for error handling)
+- import_playbook: provisioning/error_handling/cleanup.yml
+#  tags: [cleanup, error_handling]

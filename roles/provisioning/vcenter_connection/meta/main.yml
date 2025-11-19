@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  author: Vincent Zamora
+  description: vCenter connection and validation role
+  license: MIT
+  min_ansible_version: 2.9
+  platforms:
+    - name: EL
+      versions:
+        - 9
+  galaxy_tags:
+    - vmware
+    - vcenter
+    - system
+
+dependencies: []

@@ -1,0 +1,26 @@
+---
+# vCenter Connection Role - Main Tasks
+# Establishes and validates vCenter connectivity
+
+- name: "Include vCenter connection validation tasks"
+  include_tasks: validate_vars.yml
+  tags:
+    - vcenter
+    - validation
+    - setup
+
+- name: "Include vCenter connection logging tasks"
+  include_tasks: logging.yml
+  when: config_vm_validation_enable_logging | bool
+  tags:
+    - vcenter
+    - logging
+    - setup
+
+- name: "Include vCenter permissions verification tasks"
+  include_tasks: verify_permissions.yml
+  when: config_vcenter_validation_check_permissions | bool
+  tags:
+    - vcenter
+    - permissions
+    - validation

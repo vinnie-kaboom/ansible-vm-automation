@@ -1,0 +1,34 @@
+---
+# VMware Provisioning Role Variables
+# These variables are used by the vmware_guest module in provision.yml
+# They have higher precedence than defaults and map config_* variables to module parameters
+
+# Guest OS Customization Configuration
+# This configures the VM's hostname and domain (network config is separate)
+customization_config:
+  hostname: "{{ config_vm_name }}"
+  domain: "{{ config_vm_domain }}"
+  dns_servers: "{{ config_vm_network_dns_servers }}"
+  dns_suffix:
+    - "{{ config_vm_domain }}"
+  nic_settings:
+    - ip: "{{ config_vm_network_start_ip }}"
+      netmask: "{{ config_vm_network_netmask }}"
+      gateway: "{{ config_vm_network_gateway }}"
+      dns_servers: "{{ config_vm_network_dns_servers }}"
+
+# This configures the VM's network adapter settings
+networks_config:
+  - name: "{{ config_vm_network }}"
+    type: static
+    ip: "{{ config_vm_network_start_ip }}"  # Derived from ansible_host in inventory
+    netmask: "{{ config_vm_network_netmask }}"
+    gateway: "{{ config_vm_network_gateway }}"
+
+# Hardware Configuration
+# This configures the VM's CPU, memory, and disk settings
+hardware_config:
+  memory_mb: "{{ config_vm_memory_mb }}"
+  num_cpus: "{{ config_vm_cpu_count }}"
+  scsi: paravirtual
+

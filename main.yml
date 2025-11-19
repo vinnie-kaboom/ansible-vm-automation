@@ -1,0 +1,101 @@
+#- name: VM Automation Playbook
+#  hosts: localhost
+#  gather_facts: no
+#  connection: local
+#
+#  vars_files:
+#    # We still need these files to look up vCenter details, but the network info is now passed.
+#    - .github/global_vars/netzone_info.yaml
+#    - .github/global_vars/subnet_info.yaml
+#    # We load the template here to use it as a base for our updates.
+#    - configs/project_config.yml
+#
+#  # All the variables below are now correctly received from the JSON output of the
+#  # pre-approver-validation.yml playbook.
+#  vars:
+#    config_vm_name: "{{ full_hostname }}"
+#    config_vm_disk_size_gb: "{{ disk_size_input }}"
+#    config_vm_network: "{{ network_color }}"
+#    config_vm_domain: "{{ domain_name }}"
+#    config_vm_ip: "{{ ip_address_input }}"
+#    config_os: "{{ os_input }}"
+#    config_ram: "{{ ram_input }}"
+#    config_cpu: "{{ cpu_input }}"
+#    config_ou_codes: "{{ ou_codes }}"
+#    config_primary_dns: "{{ primary_dns_server }}"
+#    config_secondary_dns: "{{ secondary_dns_server }}"
+#    config_primary_ntp: "{{ primary_ntp_server }}"
+#    config_secondary_ntp: "{{ secondary_ntp_server }}"
+#    config_gateway: "{{ gateway_ip }}"
+#    config_environment_short: "{{ environment_short }}"
+#    config_server_type_short: "{{ server_type_short }}"
+#    # New variable received from the validation playbook
+#    config_netmask: "{{ netmask }}"
+#
+#    # --- New: OS to VMware Template Mapping ---
+#    os_template_map:
+#      "RHEL 7": "RHEL_7_Template"
+#      "RHEL 8": "RHEL_8_Template"
+#      "RHEL 9": "Satellite_Capsule_05152025"
+#      "Windows 2019": "Windows_2019_Template"
+#      "Windows 2022": "Windows_2022_Template"
+#
+#  tasks:
+#    # This task is now redundant because the pre-approval playbook is already
+#    # passing the necessary network and hostname data.
+#    # The only remaining tasks needed here are for looking up vCenter details.
+#    - name: Find network information based on IP address
+#      ansible.builtin.set_fact:
+#        matched_subnet_info: "{{ subnet_info[item.key] }}"
+#        matched_subnet_name: "{{ item.key }}"
+#      loop: "{{ subnet_info | dict2items }}"
+#      when: config_vm_ip is ipaddr(item.key)
+#      loop_control:
+#        label: "{{ item.key }}"
+#
+#    - name: Get network zone information
+#      ansible.builtin.set_fact:
+#        net_zone_info: "{{ zones[matched_subnet_info.zone][matched_subnet_info.location] }}"
+#
+#    - name: Set facts with derived vCenter details
+#      ansible.builtin.set_fact:
+#        config_vcenter_datacenter: "{{ net_zone_info.vcenter_datacenter }}"
+#        config_vcenter_cluster: "{{ net_zone_info.vcenter_cluster }}"
+#        config_vm_folder: "Satellite and Capsule Servers"
+#        config_vcenter_datastore: "{{ net_zone_info.vcenter_datastore }}"
+#        config_vcenter_resource_pool: ""
+#
+#    - name: Update project_config.yml with dynamic values
+#      ansible.builtin.set_fact:
+#        vm_config_updated: >
+#          {{ vm_config | combine({
+#              'config_vm_name': config_vm_name,
+#              'config_vm_environment': config_environment_short,
+#              'config_vm_template': os_template_map[config_os],
+#              'config_vm_disk_size_gb': config_vm_disk_size_gb,
+#              'config_vm_network': config_vm_network,
+#              'config_vm_domain': config_vm_domain,
+#              'config_vcenter_datacenter': config_vcenter_datacenter,
+#              'config_vcenter_cluster': config_vcenter_cluster,
+#              'config_vcenter_datastore': config_vcenter_datastore,
+#              'config_vm_memory_mb': config_ram | int * 1024,
+#              'config_vm_cpu_count': config_cpu | int,
+#              'config_vm_os': config_os,
+#              'config_vm_network_dns_servers': [config_primary_dns, config_secondary_dns],
+#              'config_vm_network_gateway': config_gateway,
+#              'config_vm_network_start_ip': config_vm_ip,
+#              'config_vm_network_end_ip': config_vm_ip,
+#              'config_vm_network_netmask': config_netmask
+#            }) }}
+#
+#    - name: Write updated config to the canonical file
+#      ansible.builtin.copy:
+#        content: "{{ vm_config_updated | to_nice_yaml }}"
+#        dest: "configs/project_config.yml"
+#
+#    - name: Run the VMware Provisioning Role
+#      ansible.builtin.import_role:
+#        name: vmware_provisioning
+#      vars:
+#        # Pass the updated config as a variable to the role
+#        vm_config: "{{ vm_config_updated }}"

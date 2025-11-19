@@ -1,0 +1,30 @@
+---
+# ===================================================================================
+# CCE3.GPC LINUX - OS-Specific Configuration
+# ===================================================================================
+#
+# PURPOSE:
+#   Linux-specific settings for CCE3.GPC domain hosts
+#   All Linux hosts in cce3_gpc_linux group inherit these variables
+# ===================================================================================
+
+# --- Connection Settings ---
+ansible_connection: ssh
+ansible_python_interpreter: /usr/bin/python3
+ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+# --- OS-Specific Package Management ---
+config_vm_package_manager: "dnf"
+config_vm_common_packages: "curl, wget, vim, htop, git, python3, python3-pip"
+config_vm_update_system: true
+config_vm_update_system_security: true
+
+# --- OS-Specific Services ---
+config_vm_common_services: "ssh, chronyd"
+config_vm_enable_services: true
+config_vm_start_services: true
+
+# --- Linux-Specific Security ---
+config_vm_disable_root_login: true
+config_vm_enable_firewall: true
+config_vm_secure_boot: false

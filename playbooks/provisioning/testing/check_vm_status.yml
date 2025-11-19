@@ -1,0 +1,34 @@
+---
+- name: "Check VM Operational Status"
+  hosts: "{{ ansible_host | default('all') }}"
+  any_errors_fatal: false
+  gather_facts: false
+  connection: local
+
+  vars:
+  # All variables (config_*, vcenter_*) are inherited from inventory
+  # No need to redefine them here to avoid circular references
+
+  tasks:
+    - name: "Validate VM configuration for {{ inventory_hostname }}"
+      debug:
+        msg:
+          - "VM Configuration Validation"
+          - "========================"
+          - "Hostname: {{ inventory_hostname }}"
+          - "Target VM Name: {{ config_vm_name }}"
+          - "Template: {{ config_vm_template }}"
+          - "Datacenter: {{ config_vcenter_datacenter }}"
+          - "Cluster: {{ config_vcenter_cluster }}"
+          - "Memory (MB): {{ config_vm_memory_mb }}"
+          - "CPU Count: {{ config_vm_cpu_count }}"
+          - "Disk Size (GB): {{ config_vm_disk_size_gb }}"
+          - "Network: {{ config_vm_network }}"
+          - "Domain: {{ config_vm_domain }}"
+      when: inventory_hostname != 'localhost'
+
+    - name: "Skip VM status check during validation (VMs not created yet)"
+      debug:
+        msg: "Skipping actual VM status check - VMs will be created after PR approval"
+      when: inventory_hostname == 'localhost' or inventory_hostname in groups['runner']
+      changed_when: false

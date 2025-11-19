@@ -1,0 +1,10 @@
+---
+- name: "Log connection failure"
+  debug:
+    msg: "vCenter connection failed: {{ vcenter_host }}"
+  listen: "connection_failed"
+
+- name: "Cleanup connection"
+  debug:
+    msg: "Cleaning up vCenter connection"
+  listen: "cleanup_connection"

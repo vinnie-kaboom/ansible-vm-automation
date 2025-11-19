@@ -1,0 +1,27 @@
+---
+# Generate validation results summary (console output only)
+- name: "Get current timestamp"
+  command: date -u +%Y-%m-%dT%H:%M:%SZ
+  register: current_timestamp
+  changed_when: false
+  delegate_to: localhost
+  connection: local
+  tags: validation
+
+- name: "Compile validation results"
+  set_fact:
+    validation_report:
+      timestamp: "{{ current_timestamp.stdout }}"
+      vm_name: "{{ config_vm_name }}"
+      environment: "{{ config_vm_environment }}"
+      validations:
+        config: "{{ validation_results.config | default('PASSED') }}"
+        resources: "{{ validation_results.resources | default('PASSED') }}"
+        network: "{{ validation_results.network | default('PASSED') }}"
+      warnings: "{{ validation_warnings | default([]) }}"
+  tags: validation
+
+- name: "Display validation summary"
+  debug:
+    msg: "Validation complete: {{ config_vm_name }} - Config:{{ validation_report.validations.config }} Resources:{{ validation_report.validations.resources }} Network:{{ validation_report.validations.network }}"
+  tags: validation
