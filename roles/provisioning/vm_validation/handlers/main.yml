@@ -1,0 +1,100 @@
+---
+# Handlers for validation role
+
+- name: Log validation summary
+  debug:
+    msg: >
+      [LOG] Validation summary for {{ config_vm_name }}:
+      Config={{ validation_report.validations.config }},
+      Resources={{ validation_report.validations.resources }},
+      Network={{ validation_report.validations.network }},
+      Timestamp={{ validation_report.timestamp }}
+
+- name: Save validation report to file
+  copy:
+    content: "{{ validation_report | to_nice_json }}"
+    dest: "/tmp/validation_report_{{ config_vm_name }}.json"
+
+- name: Send validation alert
+  debug:
+    msg: >
+      ALERT: Validation failed for {{ config_vm_name }} in {{ config_vm_environment }}!
+      Details: {{ validation_report }}
+
+# Handlers for VM configuration validation role
+- name: Log configuration validation success
+  debug:
+    msg: >
+      [SUCCESS] Configuration validation passed for template '{{ _template_name }}'
+      in datacenter '{{ vcenter_datacenter }}'.
+
+- name: Log configuration validation failure
+  debug:
+    msg: >
+      [ERROR] Configuration validation failed for template '{{ _template_name }}'
+      in datacenter '{{ vcenter_datacenter }}'.
+      Please verify template existence and metadata.
+
+- name: Save validation result to file
+  copy:
+    content: "{{ validation_results | to_nice_json }}"
+    dest: "/tmp/config_validation_result_{{ _template_name | default('unknown') }}.json"
+
+- name: Send validation alert
+  debug:
+    msg: >
+      ALERT: Configuration validation FAILED for '{{ _template_name }}' in environment '{{ config_vm_environment | default('unknown') }}'.
+      Check logs and vSphere configuration.
+
+# Handlers for network validation role
+- name: Log network validation success
+  debug:
+    msg: >
+      [SUCCESS] Network validation passed for network '{{ config_vm_network | default("unknown") }}'
+      in environment '{{ config_vm_environment | default("unknown") }}'.
+
+- name: Log network validation failure
+  debug:
+    msg: >
+      [ERROR] Network validation failed for network '{{ config_vm_network | default("unknown") }}'
+      in environment '{{ config_vm_environment | default("unknown") }}'.
+      Please verify network configuration and connectivity.
+
+- name: Save network validation result to file
+  copy:
+    content: "{{ validation_results | to_nice_json }}"
+    dest: "/tmp/network_validation_result_{{ config_vm_network | default('unknown') }}.json"
+
+- name: Send network validation alert
+  debug:
+    msg: >
+      ALERT: Network validation FAILED for '{{ config_vm_network | default('unknown') }}'
+      in environment '{{ config_vm_environment | default('unknown') }}'.
+      Check logs and network configuration.
+
+# Handlers for resource validation role
+- name: Log resource validation success
+  debug:
+    msg: >
+      [SUCCESS] Resource validation passed for cluster '{{ vcenter_cluster | default("unknown") }}'
+      in environment '{{ config_vm_environment | default("unknown") }}'.
+      Datastore free space is sufficient.
+
+- name: Log resource validation failure
+  debug:
+    msg: >
+      [ERROR] Resource validation failed for cluster '{{ vcenter_cluster | default("unknown") }}'
+      in environment '{{ config_vm_environment | default("unknown") }}'.
+      Datastore or cluster resources insufficient.
+
+- name: Save resource validation result to file
+  copy:
+    content: "{{ validation_results | to_nice_json }}"
+    dest: "/tmp/resource_validation_result_{{ vcenter_cluster | default('unknown') }}.json"
+
+- name: Send resource validation alert
+  debug:
+    msg: >
+      ALERT: Resource validation FAILED for cluster '{{ vcenter_cluster | default('unknown') }}'
+      in environment '{{ config_vm_environment | default('unknown') }}'.
+      Check datastore capacity and cluster availability.

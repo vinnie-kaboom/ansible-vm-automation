@@ -4,12 +4,6 @@
 
 - name: "Check vCenter API version"
   community.vmware.vmware_about_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_connection_validate_certs }}"
-  delegate_to: localhost
-  connection: local
   register: vcenter_info
   tags:
     - vcenter
@@ -28,16 +22,13 @@
     - vcenter
     - permissions
     - api_version
+  notify:
+    - vcenter_api_success
+    - vcenter_api_failure  
 
 - name: "Check datacenter access permissions"
   community.vmware.vmware_datacenter_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_connection_validate_certs }}"
     datacenter: "{{ vcenter_datacenter }}"
-  delegate_to: localhost
-  connection: local
   register: datacenter_access
   ignore_errors: false
   when: vcenter_validation_check_datacenter_access | default(true) | bool
@@ -45,6 +36,9 @@
     - vcenter
     - permissions
     - datacenter
+  notify:
+    - vcenter_datacenter_success
+    - vcenter_datacenter_failure   
 
 - name: "Validate datacenter access"
   debug:
@@ -56,17 +50,14 @@
     - vcenter
     - permissions
     - datacenter
+  notify:
+    - vcenter_datacenter_success
+    - vcenter_datacenter_failure    
 
 - name: "Check cluster access permissions"
   community.vmware.vmware_cluster_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_connection_validate_certs }}"
     datacenter: "{{ vcenter_datacenter }}"
     cluster_name: "{{ vcenter_cluster }}"
-  delegate_to: localhost
-  connection: local
   register: cluster_access
   ignore_errors: false
   when: vcenter_validation_check_cluster_access | default(true) | bool
@@ -74,6 +65,9 @@
     - vcenter
     - permissions
     - cluster
+  notify:
+    - vcenter_cluster_success
+    - vcenter_cluster_failure    
 
 - name: "Validate cluster access"
   debug:
@@ -85,16 +79,13 @@
     - vcenter
     - permissions
     - cluster
+  notify:
+    - vcenter_cluster_success
+    - vcenter_cluster_failure    
 
 - name: "Check datastore access permissions"
   community.vmware.vmware_datastore_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_connection_validate_certs }}"
     name: "{{ vcenter_datastore }}"
-  delegate_to: localhost
-  connection: local
   register: datastore_access
   ignore_errors: false
   when: vcenter_datastore | default('') != ''
@@ -102,6 +93,9 @@
     - vcenter
     - permissions
     - datastore
+  notify:
+    - vcenter_datastore_success
+    - vcenter_datastore_failure    
 
 - name: "Validate datastore access"
   debug:

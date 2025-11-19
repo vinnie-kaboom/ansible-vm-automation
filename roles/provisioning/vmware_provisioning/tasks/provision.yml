@@ -7,10 +7,6 @@
 
 - name: "Clone VM from template (idempotent - creates if missing, no-op if exists)"
   community.vmware.vmware_guest:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     template: "{{ config_vm_template }}"
     datacenter: "{{ config_vcenter_datacenter }}"
@@ -26,8 +22,6 @@
   poll: "{{ (not ansible_check_mode) | ternary(0, omit) }}"
   register: vm_creation
   when: not ansible_check_mode
-  delegate_to: localhost
-  connection: local
   tags: provision
 
 - name: "Wait for VM creation to complete (if async job was started)"
@@ -40,8 +34,6 @@
   when:
     - not ansible_check_mode
     - vm_creation.ansible_job_id is defined
-  delegate_to: localhost
-  connection: local
   tags: provision
 
 - name: "Power on VM (Check Mode)"
@@ -52,14 +44,8 @@
 
 - name: "Power on VM (idempotent - only powers on if not already on)"
   community.vmware.vmware_guest_powerstate:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     state: powered-on
   when: not ansible_check_mode
-  delegate_to: localhost
-  connection: local
   tags: provision

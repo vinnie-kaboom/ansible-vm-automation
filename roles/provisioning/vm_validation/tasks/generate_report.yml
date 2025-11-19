@@ -25,3 +25,9 @@
   debug:
     msg: "Validation complete: {{ config_vm_name }} - Config:{{ validation_report.validations.config }} Resources:{{ validation_report.validations.resources }} Network:{{ validation_report.validations.network }}"
   tags: validation
+  notify:
+    - Log validation summary
+    - Save validation report to file
+  when: validation_report.validations.config != 'PASSED'
+    or validation_report.validations.resources != 'PASSED'
+    or validation_report.validations.network != 'PASSED'
