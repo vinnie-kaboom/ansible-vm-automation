@@ -4,7 +4,7 @@
   any_errors_fatal: true
   gather_facts: false
   connection: local
-  serial: 1
+  serial: "{{ vm_parallel_count | default(5) }}"
   tags: [provision, linux]
 
   module_defaults:
@@ -27,6 +27,7 @@
 
     - role: provisioning/vm_validation
       tags: [validation]
+      when: enable_post_provision_validation | default(true) | bool
       vars:
         vm_provisioning_method: template
         # Map to expected variable names for validation role

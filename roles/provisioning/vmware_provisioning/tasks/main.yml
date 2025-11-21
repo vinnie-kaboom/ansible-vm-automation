@@ -4,6 +4,7 @@
 
 - name: "Pre-flight validation"
   include_tasks: validate.yml
+  when: enable_preflight_validation | default(true) | bool
   tags:
     - validation
     - always

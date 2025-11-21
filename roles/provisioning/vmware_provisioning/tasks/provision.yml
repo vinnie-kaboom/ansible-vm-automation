@@ -36,6 +36,16 @@
     - vm_creation.ansible_job_id is defined
   tags: provision
 
+- name: "Display VM creation result"
+  debug:
+    msg: "VM {{ config_vm_name }} created successfully. Status: {{ job_result.instance.hw_power_state | default('unknown') }}"
+  when:
+    - not ansible_check_mode
+    - job_result is defined
+    - job_result.finished is defined
+    - job_result.finished
+  tags: provision
+
 - name: "Power on VM (Check Mode)"
   debug:
     msg: "CHECK MODE: Would power on {{ config_vm_name }}"
@@ -47,5 +57,15 @@
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     state: powered-on
+  register: power_on_result
   when: not ansible_check_mode
+  tags: provision
+
+- name: "Display power on result"
+  debug:
+    msg: "VM {{ config_vm_name }} is now powered on"
+  when:
+    - not ansible_check_mode
+    - power_on_result is defined
+    - power_on_result is changed or power_on_result is succeeded
   tags: provision

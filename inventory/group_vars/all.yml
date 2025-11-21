@@ -26,8 +26,8 @@ vcenter_resource_pool: "{{ config_vcenter_resource_pool | default('') }}"
 # --- Global Error Handling ---
 config_vm_max_retries: 3
 config_vm_retry_delay: 30
-config_vm_async_retries: 3
-config_vm_async_delay: 60
+config_vm_async_retries: 10
+config_vm_async_delay: 20
 
 # --- Global Validation Settings ---
 config_vm_enable_validation: true
@@ -46,3 +46,12 @@ config_vm_start_services: true
 # --- Logging Settings ---
 log_path: "logs"
 enable_connection_logging: false
+
+# --- Performance Tuning ---
+# Control parallel VM provisioning (default: 5 VMs at once)
+vm_parallel_count: 5
+
+# Control validation behavior for bulk operations
+# Set to false to skip validation during provisioning, run separately if needed
+enable_post_provision_validation: true
+enable_preflight_validation: true
