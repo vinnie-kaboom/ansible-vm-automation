@@ -1,17 +1,10 @@
 ---
-# Generate validation results summary (console output only)
-- name: "Get current timestamp"
-  command: date -u +%Y-%m-%dT%H:%M:%SZ
-  register: current_timestamp
-  changed_when: false
-  delegate_to: localhost
-  connection: local
-  tags: validation
 
+# Generate validation results summary (console output only)
 - name: "Compile validation results"
   set_fact:
     validation_report:
-      timestamp: "{{ current_timestamp.stdout }}"
+      timestamp: "{{ ansible_date_time.iso8601 }}"
       vm_name: "{{ config_vm_name }}"
       environment: "{{ config_vm_environment }}"
       validations:
@@ -22,6 +15,15 @@
   tags: validation
 
 - name: "Display validation summary"
-  debug:
-    msg: "Validation complete: {{ config_vm_name }} - Config:{{ validation_report.validations.config }} Resources:{{ validation_report.validations.resources }} Network:{{ validation_report.validations.network }}"
+  ansible.builtin.debug:
+    msg: "Validation compdddddddddddddddddddddddddalidation_report.validations.network }}"
+  tags: validation
+
+- name: "Fail if any validation failed"
+  ansible.builtin.fail:
+    msg: "Validation failed. Check results above."
+  when: >
+    validation_report.validations.config != 'PASSED' or
+    validation_report.validations.resources != 'PASSED' or
+    validation_report.validations.network != 'PASSED'
   tags: validation

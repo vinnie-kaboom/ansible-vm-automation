@@ -1,25 +1,19 @@
 ---
 
-# Network validation tasks (simplified)
-- name: "Run network validation with error handling"
+# Network validation
+- name: "Run network validation"
   block:
     - name: "Note: Network validation not implemented"
       ansible.builtin.debug:
         msg: "Network validation is not implemented in this version. Skipping validation for network '{{ config_vm_network }}'."
-      tags: validation
 
     - name: "Set network validation result - PASSED"
       set_fact:
         validation_results: "{{ validation_results | combine({'network': 'PASSED'}) }}"
-      tags: validation
 
   rescue:
     - name: "Set network validation result - FAILED"
       set_fact:
         validation_results: "{{ validation_results | combine({'network': 'FAILED'}) }}"
-      tags: validation
 
-    - name: "Fail with network validation error"
-      fail:
-        msg: "Network validation failed"
-      tags: validation
+  tags: validation

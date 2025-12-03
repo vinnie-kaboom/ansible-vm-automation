@@ -9,7 +9,7 @@
         datastore_info: "{{ {'datastores': [{'freeSpace': 107374182400}]} }}"
         # Skip vSphere API query - datastore capacity validated during actual provisioning
       tags: validation
-
+f
     - name: "Check datastore space"
       assert:
         that:
