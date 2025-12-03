@@ -1,0 +1,15 @@
+name: Test with Ping
+
+on:
+  workflow_dispatch:
+
+jobs:
+  run-ansible-playbook:
+    runs-on: self-hosted
+    steps:
+      - name: checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run Ansible Playbook
+        run: |
+          ansible-playbook -i inventory/hosts.yaml playbooks/ping.yaml
