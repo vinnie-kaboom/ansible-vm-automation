@@ -1,6 +1,6 @@
 ---
 - name: "Linux VM Provisioning from Template"
-  hosts: "{{ ansible_host | default('all') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   any_errors_fatal: true
   gather_facts: false
   connection: local

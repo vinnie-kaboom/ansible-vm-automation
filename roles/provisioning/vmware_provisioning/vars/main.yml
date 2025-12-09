@@ -4,18 +4,13 @@
 # They have higher precedence than defaults and map config_* variables to module parameters
 
 # Guest OS Customization Configuration
-# This configures the VM's hostname and domain (network config is separate)
+# This configures the VM's hostname and domain (network config is in networks parameter)
 customization_config:
   hostname: "{{ config_vm_name }}"
   domain: "{{ config_vm_domain }}"
   dns_servers: "{{ config_vm_network_dns_servers }}"
   dns_suffix:
     - "{{ config_vm_domain }}"
-  nic_settings:
-    - ip: "{{ config_vm_network_start_ip }}"
-      netmask: "{{ config_vm_network_netmask }}"
-      gateway: "{{ config_vm_network_gateway }}"
-      dns_servers: "{{ config_vm_network_dns_servers }}"
 
 # This configures the VM's network adapter settings
 networks_config:

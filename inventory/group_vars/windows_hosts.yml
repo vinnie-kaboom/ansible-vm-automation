@@ -1,11 +1,11 @@
 ---
 # ===================================================================================
-# CCE3.GPC WINDOWS - OS-Specific Configuration
+# ALL WINDOWS HOSTS - OS-Specific Configuration
 # ===================================================================================
 #
 # PURPOSE:
-#   Windows-specific settings for CCE3.GPC domain hosts
-#   All Windows hosts in cce3_gpc_windows group inherit these variables
+#   Windows-specific settings for all Windows hosts across all zones
+#   All hosts in windows_hosts group inherit these variables
 # ===================================================================================
 
 # --- Connection Settings ---

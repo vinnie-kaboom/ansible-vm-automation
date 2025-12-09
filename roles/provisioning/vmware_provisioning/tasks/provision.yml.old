@@ -1,0 +1,660 @@
+---
+- name: "Clone VM from template (Check Mode)"
+  debug:
+    msg: "CHECK MODE: Would clone {{ config_vm_name }} from template {{ config_vm_template }}"
+  when: ansible_check_mode
+  tags: provision
+
+- name: "Clone VM from template (idempotent - creates if missing, no-op if exists)"
+  community.vmware.vmware_guest:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    template: "{{ config_vm_template }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    cluster: "{{ config_vcenter_cluster }}"
+    folder: "{{ config_vm_folder }}"
+    datastore: "{{ config_vcenter_datastore }}"
+    resource_pool: "{{ resource_pool_name | default(omit) }}"
+    state: present
+    networks: "{{ networks_config | default(omit) }}"
+    customization: "{{ customization_config | default(omit) }}"
+    hardware: "{{ hardware_config | default(omit) }}"
+  async: "{{ (not ansible_check_mode) | ternary(7200, omit) }}"
+  poll: "{{ (not ansible_check_mode) | ternary(0, omit) }}"
+  register: vm_creation
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  tags: provision
+
+- name: "Wait for VM creation to complete (if async job was started)"
+  async_status:
+    jid: "{{ vm_creation.ansible_job_id }}"
+  register: job_result
+  until: job_result.finished
+  retries: "{{ config_vm_async_retries }}"
+  delay: "{{ config_vm_async_delay }}"
+  when:
+    - not ansible_check_mode
+    - vm_creation.ansible_job_id is defined
+  delegate_to: localhost
+  connection: local
+  tags: provision
+
+- name: "Power on VM (Check Mode)"
+  debug:
+    msg: "CHECK MODE: Would power on {{ config_vm_name }}"
+  when: ansible_check_mode
+  tags: provision
+
+- name: "Power on VM (idempotent - only powers on if not already on)"
+  community.vmware.vmware_guest_powerstate:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    state: powered-on
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  tags: provision
+
+- name: "Wait for VMware Tools to become available"
+  community.vmware.vmware_guest_tools_wait:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  retries: 3
+  delay: 10
+  register: vmtools_wait
+  tags: provision
+
+- name: "Wait for guest OS customization to complete"
+  community.vmware.vmware_guest_info:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+  register: vm_info
+  until: >
+    vm_info.instance is defined and
+    vm_info.instance.hw_power_status is defined and
+    vm_info.instance.hw_power_status == "poweredOn" and
+    vm_info.instance.guest_tools_status is defined and
+    vm_info.instance.guest_tools_status == "guestToolsRunning"
+  retries: "{{ config_vm_wait_for_guest_state_retries }}"
+  delay: "{{ config_vm_wait_for_guest_state_delay }}"
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  tags: provision
+
+- name: "Get detailed VM network information"
+  community.vmware.vmware_guest_info:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    schema: vsphere
+  register: vm_detailed_info
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  tags: provision
+
+- name: "Display VM network information from VMware Tools"
+  ansible.builtin.debug:
+    msg:
+      - "VM Name: {{ config_vm_name }}"
+      - "Expected IP: {{ config_vm_network_start_ip }}"
+      - "VM IP from Tools: {{ vm_info.instance.ipv4 | default('Not yet assigned') }}"
+      - "All IPs: {{ vm_detailed_info.instance.guest.ipAddress | default('None') }}"
+      - "Guest Tools Status: {{ vm_info.instance.guest_tools_status | default('Unknown') }}"
+      - "Power Status: {{ vm_info.instance.hw_power_status | default('Unknown') }}"
+      - "Guest OS: {{ vm_detailed_info.instance.guest.guestId | default('Unknown') }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Check if VM has correct IP address"
+  ansible.builtin.set_fact:
+    vm_has_correct_ip: "{{ (vm_info.instance.ipv4 is not none) and (vm_info.instance.ipv4 == config_vm_network_start_ip) }}"
+    vm_has_any_ip: "{{ (vm_info.instance.ipv4 is not none) and (vm_info.instance.ipv4 | string | length > 0) }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Display IP check result"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "VM Network Configuration Status"
+      - "========================================="
+      - "Expected IP: {{ config_vm_network_start_ip }}"
+      - "Actual IP: {{ vm_info.instance.ipv4 | default('No IP assigned') }}"
+      - "Network: {{ config_vm_network }}"
+      - "Gateway: {{ config_vm_network_gateway }}"
+      - "Netmask: {{ config_vm_network_netmask }}"
+      - "DNS: {{ config_vm_network_dns_servers }}"
+      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP - Network customization failed') }}"
+      - "Action: {{ 'Continue' if vm_has_correct_ip | default(false) else 'Will configure network via VMware Tools' }}"
+      - "========================================="
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Get VM network details via VMware Tools (for diagnostics)"
+  community.vmware.vmware_vm_shell:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    vm_id: "{{ config_vm_name }}"
+    vm_username: "{{ config_vm_root_user | default('root') }}"
+    vm_password: "{{ config_vm_root_password }}"
+    vm_shell: "/bin/bash"
+    vm_shell_args: "-c 'echo \"=== Network Interfaces ===\"; ip addr show; echo \"=== Routes ===\"; ip route show; echo \"=== DNS ===\"; cat /etc/resolv.conf 2>/dev/null || echo \"No resolv.conf\"; echo \"=== Ping Gateway ===\"; ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo \"Cannot ping gateway\"'"
+    wait_for_process: true
+    timeout: 30
+  when:
+    - not ansible_check_mode
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  register: vm_network_diagnostics
+  tags: provision
+
+- name: "Display VM internal network diagnostics"
+  ansible.builtin.debug:
+    msg: "{{ vm_network_diagnostics.stdout_lines | default(['Diagnostics failed - check VM credentials']) }}"
+  when:
+    - not ansible_check_mode
+    - vm_network_diagnostics is defined
+  tags: provision
+
+- name: "Set ip_check for compatibility"
+  ansible.builtin.set_fact:
+    ip_check:
+      failed: "{{ not (vm_has_correct_ip | default(false)) }}"
+      succeeded: "{{ vm_has_correct_ip | default(false) }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Test network connectivity to VM (ICMP ping)"
+  ansible.builtin.command:
+    cmd: "ping -c 3 -W 2 {{ config_vm_network_start_ip }}"
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  register: ping_result
+  tags: provision
+
+- name: "Display ping result"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "Network Connectivity Test"
+      - "========================================="
+      - "Target: {{ config_vm_network_start_ip }}"
+      - "Result: {{ '✅ SUCCESS - VM is reachable' if ping_result.rc == 0 else '❌ FAILED - VM is NOT reachable' }}"
+      - "{{ 'SSH check will proceed' if ping_result.rc == 0 else 'SSH check will be SKIPPED (no network connectivity)' }}"
+      - "========================================="
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Skip SSH checks if VM not pingable"
+  ansible.builtin.set_fact:
+    vm_is_pingable: "{{ ping_result.rc == 0 }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Wait for SSH port to become available (initial check)"
+  ansible.builtin.wait_for:
+    host: "{{ config_vm_network_start_ip }}"
+    port: 22
+    delay: "{{ config_vm_wait_for_ssh_delay }}"
+    timeout: "{{ config_vm_wait_for_ssh_timeout }}"
+    state: started
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+    - ip_check is succeeded or ip_check is skipped
+  delegate_to: localhost
+  connection: local
+  register: ssh_wait_result
+  failed_when: false
+  ignore_errors: true
+  tags: provision
+
+- name: "Display SSH wait result"
+  ansible.builtin.debug:
+    msg:
+      - "SSH Port Status: {{ 'Available' if ssh_wait_result.state is defined and ssh_wait_result.state == 'started' else 'NOT Available - will attempt to enable' }}"
+      - "Elapsed Time: {{ ssh_wait_result.elapsed | default(0) }} seconds"
+  when:
+    - not ansible_check_mode
+    - ssh_wait_result is defined
+  tags: provision
+
+- name: "Test VM credentials before SSH remediation"
+  community.vmware.vmware_vm_shell:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    vm_id: "{{ config_vm_name }}"
+    vm_username: "{{ config_vm_root_user | default('root') }}"
+    vm_password: "{{ config_vm_root_password }}"
+    vm_shell: "/bin/bash"
+    vm_shell_args: "-c 'echo \"Credentials valid for SSH remediation\"'"
+    wait_for_process: true
+    timeout: 15
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+    - ssh_wait_result is defined
+    - ssh_wait_result.state is not defined or ssh_wait_result.state != 'started'
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+  delegate_to: localhost
+  connection: local
+  register: ssh_creds_check
+  failed_when: false
+  tags: provision
+
+- name: "Display SSH remediation credential check"
+  ansible.builtin.debug:
+    msg: "{{ '✅ Credentials valid - proceeding with SSH remediation' if ssh_creds_check is succeeded else '❌ Credentials INVALID - cannot enable SSH via VMware Tools' }}"
+  when:
+    - not ansible_check_mode
+    - ssh_creds_check is defined
+  tags: provision
+
+- name: "SSH remediation block"
+  block:
+    - name: "Enable and start SSH service via VMware Tools (idempotent)"
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        vm_id: "{{ config_vm_name }}"
+        vm_username: "{{ config_vm_root_user | default('root') }}"
+        vm_password: "{{ config_vm_root_password }}"
+        vm_shell: "/bin/bash"
+        vm_shell_args: "-c 'systemctl is-active sshd || (systemctl enable sshd && systemctl start sshd)'"
+        wait_for_process: true
+        timeout: 60
+      register: ssh_enable_result
+
+    - name: "Configure firewall to allow SSH via VMware Tools (idempotent)"
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        vm_id: "{{ config_vm_name }}"
+        vm_username: "{{ config_vm_root_user | default('root') }}"
+        vm_password: "{{ config_vm_root_password }}"
+        vm_shell: "/bin/bash"
+        vm_shell_args: "-c 'firewall-cmd --query-service=ssh || (firewall-cmd --permanent --add-service=ssh && firewall-cmd --reload) || iptables -C INPUT -p tcp --dport 22 -j ACCEPT 2>/dev/null || iptables -I INPUT -p tcp --dport 22 -j ACCEPT || true'"
+        wait_for_process: true
+        timeout: 30
+      register: firewall_config_result
+
+  rescue:
+    - name: "SSH remediation failed"
+      ansible.builtin.debug:
+        msg: "Failed to enable SSH or configure firewall via VMware Tools. Check VM credentials and VMware Tools status."
+
+  always:
+    - name: "Display SSH remediation result"
+      ansible.builtin.debug:
+        msg:
+          - "SSH Service: {{ 'Enabled' if ssh_enable_result is succeeded else 'Failed' }}"
+          - "Firewall: {{ 'Configured' if firewall_config_result is succeeded else 'Failed' }}"
+
+  when:
+    - not ansible_check_mode
+    - ssh_wait_result is defined
+    - ssh_wait_result.state is not defined or ssh_wait_result.state != 'started'
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+    - ssh_creds_check is defined
+    - ssh_creds_check is succeeded
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  tags: provision
+
+- name: "Test VM credentials before network configuration"
+  community.vmware.vmware_vm_shell:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    vm_id: "{{ config_vm_name }}"
+    vm_username: "{{ config_vm_root_user | default('root') }}"
+    vm_password: "{{ config_vm_root_password }}"
+    vm_shell: "/bin/bash"
+    vm_shell_args: "-c 'whoami && echo \"SUCCESS: VM credentials are valid\"'"
+    wait_for_process: true
+    timeout: 15
+  when:
+    - not ansible_check_mode
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+  delegate_to: localhost
+  connection: local
+  register: creds_check
+  failed_when: false
+  tags: provision
+
+- name: "Display credential test result"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "VM Credentials Test for {{ config_vm_name }}"
+      - "========================================="
+      - "User: {{ config_vm_root_user | default('root') }}"
+      - "Status: {{ '✅ PASS - Credentials are valid' if creds_check is succeeded else '❌ FAIL - Credentials are INVALID' }}"
+      - "{{ 'Output: ' + (creds_check.stdout | default('')) if creds_check is succeeded else 'Error: ' + (creds_check.stderr | default('Authentication failed or VMware Tools not responding')) }}"
+      - "========================================="
+  when:
+    - not ansible_check_mode
+    - creds_check is defined
+  tags: provision
+
+- name: "Fail if credentials are invalid"
+  ansible.builtin.fail:
+    msg: |
+      ❌ VM CREDENTIALS INVALID ❌
+      
+      Cannot authenticate to {{ config_vm_name }} with provided credentials.
+      
+      User: {{ config_vm_root_user | default('root') }}
+      Password: {{ '(configured)' if config_vm_root_password | length > 0 else '(NOT SET)' }}
+      
+      Possible causes:
+      1. VM_ROOT_PASSWORD GitHub secret is incorrect
+      2. Root password in VM template is different
+      3. User '{{ config_vm_root_user | default('root') }}' does not exist in VM
+      4. VMware Tools not running or not responding
+      
+      To fix:
+      1. Log into VM console in vCenter
+      2. Verify root password
+      3. Update VM_ROOT_PASSWORD secret in GitHub
+      4. Check VMware Tools status: systemctl status vmtoolsd
+      
+      Error details: {{ creds_check.stderr | default('No error details available') }}
+  when:
+    - not ansible_check_mode
+    - creds_check is defined
+    - creds_check is failed
+  tags: provision
+
+- name: "Network configuration block"
+  block:
+    - name: "Configure static IP via VMware Tools (simple approach)"
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        vm_id: "{{ config_vm_name }}"
+        vm_username: "{{ config_vm_root_user | default('root') }}"
+        vm_password: "{{ config_vm_root_password }}"
+        vm_shell: "/bin/bash"
+        vm_shell_args: "-c 'NIC=$(ip -o link show | grep -v lo | head -1 | awk \"{print \\$2}\" | sed \"s/://\"); echo \"Using NIC: $NIC\"; ip addr flush dev $NIC; ip addr add {{ config_vm_network_start_ip }}/24 dev $NIC; ip link set $NIC up; ip route add default via {{ config_vm_network_gateway }} 2>/dev/null || true; echo \"nameserver {{ config_vm_network_dns_servers }}\" > /etc/resolv.conf; echo \"Configuration complete\"; ip addr show $NIC; ip route show'"
+        wait_for_process: true
+        timeout: 60
+      register: network_config_result
+      when: creds_check is succeeded
+
+    - name: "Configure static IP via VMware Tools (simple approach)"
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        vm_id: "{{ config_vm_name }}"
+        vm_username: "{{ config_vm_root_user | default('root') }}"
+        vm_password: "{{ config_vm_root_password }}"
+        vm_shell: "/bin/bash"
+        vm_shell_args: "-c 'NIC=$(ip -o link show | grep -v lo | head -1 | awk \"{print \\$2}\" | sed \"s/://\"); echo \"Using NIC: $NIC\"; ip addr flush dev $NIC; ip addr add {{ config_vm_network_start_ip }}/24 dev $NIC; ip link set $NIC up; ip route add default via {{ config_vm_network_gateway }} 2>/dev/null || true; echo \"nameserver {{ config_vm_network_dns_servers }}\" > /etc/resolv.conf; echo \"Configuration complete\"; ip addr show $NIC; ip route show'"
+        wait_for_process: true
+        timeout: 60
+      register: network_config_result
+      when: creds_check is succeeded
+
+  rescue:
+    - name: "Network configuration failed"
+      ansible.builtin.debug:
+        msg: "Failed to configure network via VMware Tools. VM may need manual network configuration."
+
+  always:
+    - name: "Display network configuration result"
+      ansible.builtin.debug:
+        msg:
+          - "Network Configuration Result:"
+          - "  Status: {{ 'SUCCESS' if network_config_result is succeeded else 'FAILED' }}"
+          - "  Output: {{ network_config_result.stdout | default('No output') }}"
+          - "  Error: {{ network_config_result.stderr | default('No errors') }}"
+
+    - name: "Verify network configuration was applied"
+      community.vmware.vmware_vm_shell:
+        hostname: "{{ vcenter_host }}"
+        username: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        validate_certs: "{{ vcenter_validate_certs }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        vm_id: "{{ config_vm_name }}"
+        vm_username: "{{ config_vm_root_user | default('root') }}"
+        vm_password: "{{ config_vm_root_password }}"
+        vm_shell: "/bin/bash"
+        vm_shell_args: "-c 'ip addr show | grep {{ config_vm_network_start_ip }}'"
+        wait_for_process: true
+        timeout: 15
+      register: ip_verify
+      ignore_errors: true
+      when: network_config_result is succeeded
+
+    - name: "Display IP verification"
+      ansible.builtin.debug:
+        msg: "{{ 'IP successfully configured on VM' if ip_verify is succeeded else 'IP NOT found on VM - configuration may have failed' }}"
+      when: ip_verify is defined
+
+  when:
+    - not ansible_check_mode
+    - not (vm_has_correct_ip | default(false))
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  tags: provision
+
+- name: "Wait after network configuration"
+  ansible.builtin.pause:
+    seconds: 10
+  when:
+    - not ansible_check_mode
+    - network_config_result is defined
+    - network_config_result is not skipped
+    - network_config_result is succeeded
+  tags: provision
+
+- name: "Retry ping after network configuration"
+  ansible.builtin.command:
+    cmd: "ping -c 3 -W 2 {{ config_vm_network_start_ip }}"
+  when:
+    - not ansible_check_mode
+    - network_config_result is defined
+    - network_config_result is not skipped
+    - network_config_result is succeeded
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  register: ping_retry_result
+  tags: provision
+
+- name: "Display SSH enable result"
+  ansible.builtin.debug:
+    msg: "{{ 'SSH service enabled successfully' if ssh_enable_result is succeeded else 'Failed to enable SSH via VMware Tools - check VM credentials' }}"
+  when:
+    - not ansible_check_mode
+    - ssh_enable_result is defined
+    - ssh_enable_result is not skipped
+  tags: provision
+
+- name: "Additional wait for SSH service to fully initialize"
+  ansible.builtin.pause:
+    seconds: "{{ config_vm_post_boot_wait }}"
+  when:
+    - not ansible_check_mode
+    - ssh_retry_result is defined
+    - ssh_retry_result.state is defined
+    - ssh_retry_result.state == 'started'
+  tags: provision
+
+- name: "Retry SSH port check after enabling service"
+  ansible.builtin.wait_for:
+    host: "{{ config_vm_network_start_ip }}"
+    port: 22
+    delay: 5
+    timeout: 120
+    state: started
+  when:
+    - not ansible_check_mode
+    - ssh_enable_result is defined
+    - ssh_enable_result is not skipped
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  failed_when: false
+  register: ssh_retry_result
+  tags: provision
+
+- name: "Determine if SSH port is available"
+  ansible.builtin.set_fact:
+    ssh_port_available: "{{ (ssh_wait_result.state is defined and ssh_wait_result.state == 'started') or (ssh_retry_result is defined and ssh_retry_result.state is defined and ssh_retry_result.state == 'started') }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Verify SSH authentication works"
+  ansible.builtin.command:
+    cmd: "ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null -o ConnectTimeout=10 -o BatchMode=yes {{ config_vm_root_user | default('root') }}@{{ config_vm_network_start_ip }} 'echo SSH_OK'"
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+    - ssh_port_available | default(false)
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  failed_when: false
+  register: ssh_auth_test
+  tags: provision
+
+- name: "Determine final SSH status"
+  ansible.builtin.set_fact:
+    ssh_is_ready: "{{ vm_is_pingable | default(false) and ssh_port_available | default(false) and ssh_auth_test is defined and ssh_auth_test.rc is defined and ssh_auth_test.rc == 0 }}"
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Final SSH status summary"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "SSH Connectivity Status for {{ config_vm_name }}"
+      - "========================================="
+      - "VM IP: {{ config_vm_network_start_ip }}"
+      - "Initial SSH Port Check: {{ 'SUCCESS' if ssh_wait_result.state is defined and ssh_wait_result.state == 'started' else 'FAILED' }}"
+      - "Network Configured: {{ 'YES' if network_config_result is defined and network_config_result is not skipped else 'NOT NEEDED' }}"
+      - "SSH Service Enabled: {{ 'YES' if ssh_enable_result is defined and ssh_enable_result is not skipped else 'NOT NEEDED' }}"
+      - "Firewall Configured: {{ 'YES' if firewall_config_result is defined and firewall_config_result is not skipped else 'NOT NEEDED' }}"
+      - "Retry SSH Port Check: {{ 'SUCCESS' if ssh_retry_result is defined and ssh_retry_result.state is defined and ssh_retry_result.state == 'started' else 'N/A or FAILED' }}"
+      - "SSH Authentication Test: {{ 'SUCCESS' if ssh_auth_test is defined and ssh_auth_test.rc is defined and ssh_auth_test.rc == 0 else ('FAILED - ' + (ssh_auth_test.stderr | default('Port not available')) if ssh_auth_test is defined else 'SKIPPED') }}"
+      - "========================================="
+      - "Final Status: {{ 'SSH IS READY ✓' if ssh_is_ready | default(false) else 'SSH NOT AVAILABLE ✗' }}"
+      - "========================================="
+  when: not ansible_check_mode
+  tags: provision
+
+- name: "Warn if SSH is not available"
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  WARNING: SSH connectivity could not be established to {{ config_vm_name }} ({{ config_vm_network_start_ip }})
+      
+      Issue: {{ 'VM not reachable (ping failed)' if not (vm_is_pingable | default(false)) else ('SSH port not reachable' if not (ssh_port_available | default(false)) else 'SSH authentication failed') }}
+      
+      {% if not (vm_is_pingable | default(false)) %}
+      ❌ NETWORK CONNECTIVITY ISSUE:
+      - VM is not reachable via ping (ICMP)
+      - This means SSH cannot work either
+      - Network configuration failed or VM is on wrong network
+      
+      Troubleshooting:
+      1. Check VM network configuration via vCenter console
+      2. Verify VM is on correct network/VLAN: {{ config_vm_network }}
+      3. Check if VM has IP address: {{ config_vm_network_start_ip }}
+      4. Verify gateway is correct: {{ config_vm_network_gateway }}
+      5. Check routing between Ansible host and VM network
+      6. Review VM internal diagnostics output above
+      
+      {% elif not (ssh_port_available | default(false)) %}
+      ❌ SSH PORT ISSUE:
+      - VM is pingable but SSH port 22 is not reachable
+      - SSH service may not be running or firewall is blocking
+      
+      Troubleshooting:
+      1. Log into VM console in vCenter
+      2. Check SSH service: systemctl status sshd
+      3. Check if SSH is listening: ss -tlnp | grep :22
+      4. Check firewall: firewall-cmd --list-all
+      5. Try starting SSH: systemctl start sshd
+      
+      {% else %}
+      ❌ SSH AUTHENTICATION ISSUE:
+      - VM is pingable and SSH port is open
+      - But authentication failed
+      
+      Troubleshooting:
+      1. Verify VM_ROOT_PASSWORD secret is correct
+      2. Check SSH configuration: /etc/ssh/sshd_config
+      3. Verify PermitRootLogin is enabled
+      4. Check SSH logs: journalctl -u sshd -n 50
+      5. Test SSH locally in VM: ssh localhost
+      {% endif %}
+      
+      Manual remediation:
+      1. Log into VM console in vCenter
+      2. Run diagnostics: ip addr show && ip route show
+      3. Check SSH: systemctl status sshd
+      4. Check firewall: firewall-cmd --list-all
+  when:
+    - not ansible_check_mode
+    - not (ssh_is_ready | default(false))
+  tags: provision

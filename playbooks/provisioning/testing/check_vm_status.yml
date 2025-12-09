@@ -1,6 +1,6 @@
 ---
 - name: "Check VM Operational Status"
-  hosts: "{{ ansible_host | default('all') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   any_errors_fatal: false
   gather_facts: false
   connection: local

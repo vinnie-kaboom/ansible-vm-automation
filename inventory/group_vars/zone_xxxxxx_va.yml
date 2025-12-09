@@ -1,3 +1,21 @@
+---
 # ===================================================================================
-# VA - VM Provisioning Configuration
+# Zone: XXXXXX-VA — vCenter and environment configuration
+# vCenter connection defaults for XXXXXX-VA
 # ===================================================================================
+
+config_vcenter_datacenter: "xxxxxxxxxxxxxx"
+config_vcenter_cluster: "xxxxxxxxxxxxx"
+config_vcenter_datastore: "xxxxxxxxxxxxxxx"
+config_vm_folder: "xxxxxxxxxxxxxxxxxxxx"
+
+config_vcenter_resource_pool: ""
+config_vcenter_connection_timeout: 30
+config_vcenter_connection_retry_attempts: 3
+config_vcenter_connection_delay: 5
+config_vcenter_connection_validate_certs: false
+config_vcenter_validation_check_permissions: true
+
+# Zone-wide template and environment
+config_vm_template: "xxxxxxxxxxxxxxxxxxxxxxxxxxx"
+config_vm_environment: "xxxxxxxxxxxxxxxxxx"

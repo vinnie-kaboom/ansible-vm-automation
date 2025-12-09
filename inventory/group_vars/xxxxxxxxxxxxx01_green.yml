@@ -1,0 +1,28 @@
+---
+# ===================================================================================
+# Network: xxxxxxxxxxxxx01_green — VA green network configuration
+# ===================================================================================
+
+# Network configuration
+config_vm_network: "xxxxxxxxxxxxx01_green"
+config_vm_domain: "cce3.gpc"
+config_vm_network_use_dhcp: false
+
+# DNS and Gateway - UPDATE THESE WITH REAL VALUES
+config_vm_network_dns_servers:
+  - "10.x.x.x"  # Primary DNS - REPLACE WITH REAL IP
+  - "10.x.x.x"  # Secondary DNS - REPLACE WITH REAL IP
+config_vm_network_gateway: "10.x.x.1"  # REPLACE WITH REAL GATEWAY IP
+config_vm_network_netmask: "255.255.255.0"  # REPLACE IF DIFFERENT
+
+# Per-host derived values - these use the ansible_host from inventory
+config_vm_name: "{{ inventory_hostname }}"
+config_vm_network_start_ip: "{{ ansible_host }}"
+config_vm_network_end_ip: "{{ ansible_host }}"
+config_vm_network_domain: "{{ config_vm_domain }}"
+
+# Default VM sizing
+config_vm_memory_mb: 4096
+config_vm_cpu_count: 2
+config_vm_disk_size_gb: 60
+config_vm_disk_type: "thin"

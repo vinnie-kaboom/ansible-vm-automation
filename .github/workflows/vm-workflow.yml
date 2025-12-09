@@ -16,7 +16,7 @@ jobs:
     with:
       playbook: 'playbooks/site.yml'
       tags: 'validation'
-      limit: 'xxxxxxxxxx'
+      limit: 'runner'
       check_mode: false
 
   # Actual VM provisioning and post-provision checks - runs when PR is merged to main
@@ -27,7 +27,7 @@ jobs:
     secrets: inherit
     with:
       playbook: 'playbooks/site.yml'
-      tags: 'provision,status,validation'  # Run both provisioning and status verification
-      limit: 'xxxxxxxxxx'
+      tags: 'provision,status,validation'
+      limit: 'xxxxxxxxxxxxx01_green_linux'
       check_mode: false
 

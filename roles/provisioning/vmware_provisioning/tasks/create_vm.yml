@@ -1,9 +1,11 @@
 ---
+# VM Creation Tasks
+# Creates VM from template and powers it on
+
 - name: "Clone VM from template (Check Mode)"
-  debug:
+  ansible.builtin.debug:
     msg: "CHECK MODE: Would clone {{ config_vm_name }} from template {{ config_vm_template }}"
   when: ansible_check_mode
-  tags: provision
 
 - name: "Clone VM from template (idempotent - creates if missing, no-op if exists)"
   community.vmware.vmware_guest:
@@ -28,10 +30,9 @@
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
-  tags: provision
 
 - name: "Wait for VM creation to complete (if async job was started)"
-  async_status:
+  ansible.builtin.async_status:
     jid: "{{ vm_creation.ansible_job_id }}"
   register: job_result
   until: job_result.finished
@@ -42,13 +43,11 @@
     - vm_creation.ansible_job_id is defined
   delegate_to: localhost
   connection: local
-  tags: provision
 
 - name: "Power on VM (Check Mode)"
-  debug:
+  ansible.builtin.debug:
     msg: "CHECK MODE: Would power on {{ config_vm_name }}"
   when: ansible_check_mode
-  tags: provision
 
 - name: "Power on VM (idempotent - only powers on if not already on)"
   community.vmware.vmware_guest_powerstate:
@@ -62,4 +61,3 @@
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
-  tags: provision

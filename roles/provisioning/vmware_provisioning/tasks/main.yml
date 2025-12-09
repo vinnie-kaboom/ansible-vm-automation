@@ -1,6 +1,6 @@
 ---
-# Variables are now loaded from the main playbook vars section
-# This ensures proper variable precedence and availability
+# VMware Provisioning Role - Main Task Orchestrator
+# Coordinates VM provisioning workflow with separation of concerns
 
 - name: "Pre-flight validation"
   include_tasks: validate.yml
@@ -8,14 +8,34 @@
     - validation
     - always
 
-- name: "Provision VM"
-  include_tasks: provision.yml
-  tags: provision
+- name: "Provision VM in vCenter"
+  include_tasks: create_vm.yml
+  tags: 
+    - provision
+    - vm_creation
   when: not (dry_run | default(false) | bool)
 
-# Commented out based on template
-#- name: "Install VMware Tools (skipped)"
-#  debug:
-#    msg: "VMware Tools installation skipped - template already has tools"
-#  when: (skip_tools_install | default(true) | bool)
-#  tags: provision
+- name: "Wait for VMware Tools and customization"
+  include_tasks: wait_for_customization.yml
+  tags:
+    - provision
+    - customization
+  when: not (dry_run | default(false) | bool)
+
+- name: "Validate network connectivity"
+  include_tasks: validate_network.yml
+  tags:
+    - provision
+    - validation
+    - network
+  when: not (dry_run | default(false) | bool)
+
+- name: "Validate SSH connectivity"
+  include_tasks: validate_ssh.yml
+  tags:
+    - provision
+    - validation
+    - ssh
+  when: 
+    - not (dry_run | default(false) | bool)
+    - config_validate_ssh | default(true)

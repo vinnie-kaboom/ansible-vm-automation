@@ -1,11 +1,11 @@
 ---
 # ===================================================================================
-# CCE3.GPC LINUX - OS-Specific Configuration
+# ALL LINUX HOSTS - OS-Specific Configuration
 # ===================================================================================
 #
 # PURPOSE:
-#   Linux-specific settings for CCE3.GPC domain hosts
-#   All Linux hosts in cce3_gpc_linux group inherit these variables
+#   Linux-specific settings for all Linux hosts across all zones
+#   All hosts in linux_hosts group inherit these variables
 # ===================================================================================
 
 # --- Connection Settings ---

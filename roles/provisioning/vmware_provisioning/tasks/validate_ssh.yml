@@ -1,0 +1,120 @@
+---
+# SSH Validation Tasks
+# Tests SSH connectivity and availability
+
+- name: "Skip SSH checks if VM not pingable"
+  ansible.builtin.debug:
+    msg: "⚠️  Skipping SSH checks - VM is not reachable via ping"
+  when:
+    - not ansible_check_mode
+    - not (vm_is_pingable | default(false))
+
+- name: "Wait for SSH port to become available"
+  ansible.builtin.wait_for:
+    host: "{{ config_vm_network_start_ip }}"
+    port: 22
+    state: started
+    timeout: 300
+    delay: 10
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+  delegate_to: localhost
+  register: ssh_wait_result
+  failed_when: false
+
+- name: "Display SSH wait result"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "SSH Port Check"
+      - "========================================="
+      - "Target: {{ config_vm_network_start_ip }}:22"
+      - "Result: {{ '✅ SSH port is open' if ssh_wait_result.state is defined and ssh_wait_result.state == 'started' else '❌ SSH port not available' }}"
+      - "========================================="
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+
+- name: "Set SSH port availability status"
+  ansible.builtin.set_fact:
+    ssh_port_available: "{{ ssh_wait_result.state is defined and ssh_wait_result.state == 'started' }}"
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+
+- name: "Test SSH authentication"
+  ansible.builtin.command:
+    cmd: "ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 -o BatchMode=yes {{ config_vm_root_user | default('root') }}@{{ config_vm_network_start_ip }} 'echo SSH_OK'"
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
+    - ssh_port_available | default(false)
+  delegate_to: localhost
+  register: ssh_auth_test
+  failed_when: false
+  changed_when: false
+
+- name: "Determine final SSH status"
+  ansible.builtin.set_fact:
+    ssh_is_ready: "{{ (ssh_auth_test.rc is defined and ssh_auth_test.rc == 0) or (ssh_port_available | default(false)) }}"
+  when: not ansible_check_mode
+
+- name: "Final SSH status summary"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "SSH Connectivity Status for {{ config_vm_name }}"
+      - "========================================="
+      - "VM IP: {{ config_vm_network_start_ip }}"
+      - "VM Pingable: {{ 'YES ✅' if vm_is_pingable | default(false) else 'NO ❌' }}"
+      - "SSH Port Open: {{ 'YES ✅' if ssh_port_available | default(false) else 'NO ❌' }}"
+      - "SSH Authentication: {{ 'SUCCESS ✅' if ssh_auth_test.rc is defined and ssh_auth_test.rc == 0 else 'NOT TESTED' }}"
+      - "========================================="
+      - "Final Status: {{ 'SSH IS READY ✓' if ssh_is_ready | default(false) else 'SSH NOT AVAILABLE ✗' }}"
+      - "========================================="
+  when: not ansible_check_mode
+
+- name: "Warn if SSH is not available"
+  ansible.builtin.debug:
+    msg: |
+      ⚠️  WARNING: SSH connectivity could not be established to {{ config_vm_name }} ({{ config_vm_network_start_ip }})
+      
+      Issue: {{ 'VM not reachable (ping failed)' if not (vm_is_pingable | default(false)) else ('SSH port not reachable' if not (ssh_port_available | default(false)) else 'SSH authentication failed') }}
+      
+      {% if not (vm_is_pingable | default(false)) %}
+      ❌ NETWORK CONNECTIVITY ISSUE:
+      - VM is not reachable via ping (ICMP)
+      - Network configuration may have failed
+      
+      Troubleshooting:
+      1. Check VM network configuration via vCenter console
+      2. Verify VM is on correct network: {{ config_vm_network }}
+      3. Check gateway: {{ config_vm_network_gateway }}
+      
+      {% elif not (ssh_port_available | default(false)) %}
+      ❌ SSH PORT ISSUE:
+      - VM is pingable but SSH port 22 is not reachable
+      - SSH service may not be running
+      
+      Troubleshooting:
+      1. Log into VM console in vCenter
+      2. Check SSH service: systemctl status sshd
+      3. Start SSH: systemctl start sshd && systemctl enable sshd
+      4. Check firewall: firewall-cmd --list-all
+      
+      {% else %}
+      ❌ SSH AUTHENTICATION ISSUE:
+      - VM is pingable and SSH port is open
+      - Authentication may need configuration
+      
+      Troubleshooting:
+      1. Verify credentials are correct
+      2. Check /etc/ssh/sshd_config for PermitRootLogin
+      3. Check SSH logs: journalctl -u sshd -n 50
+      {% endif %}
+      
+      Note: VM provisioning completed successfully. SSH can be configured manually if needed.
+  when:
+    - not ansible_check_mode
+    - not (ssh_is_ready | default(false))

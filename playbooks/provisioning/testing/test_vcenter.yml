@@ -1,6 +1,6 @@
 ---
 - name: "vCenter Connectivity Test"
-  hosts: "{{ ansible_host | default('all') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   any_errors_fatal: true
   gather_facts: true
   connection: local
