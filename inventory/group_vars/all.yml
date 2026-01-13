@@ -1,48 +1,36 @@
 ---
-# ===================================================================================
-# ALL HOSTS - Global Configuration
-# ===================================================================================
-#
-# PURPOSE:
-#   Global settings that apply to all hosts in the inventory
-#   These can be overridden by more specific group_vars or host_vars
-# ===================================================================================
+# Global inventory configuration
+# Environment-specific settings that apply to all hosts
+# Can be overridden by more specific group_vars or host_vars
 
-# --- vCenter Connection Variables ---
-# These reference GitHub Secrets passed through the workflow
-# Variable names aligned with join_domain pattern
+# vCenter connection (from GitHub Secrets)
 vcenter_host: "{{ secrets.VCENTER_HOSTNAME | default('') }}"
 vcenter_user: "{{ secrets.VCENTER_USERNAME | default('') }}"
 vcenter_user_password: "{{ secrets.VCENTER_PASSWORD | default('') }}"
 vcenter_validate_certs: "{{ secrets.VCENTER_VALIDATE_CERTS | default('false') | bool }}"
 
-# --- vCenter Infrastructure Variables (mapped from config_* variables) ---
-# These are set in group_vars and need to be available to roles
+# vCenter infrastructure (mapped from zone/network group_vars)
 vcenter_datacenter: "{{ config_vcenter_datacenter | default('') }}"
 vcenter_cluster: "{{ config_vcenter_cluster | default('') }}"
 vcenter_datastore: "{{ config_vcenter_datastore | default('') }}"
 vcenter_resource_pool: "{{ config_vcenter_resource_pool | default('') }}"
 
-# --- Global Error Handling ---
-config_vm_max_retries: 3
-config_vm_retry_delay: 30
-config_vm_async_retries: 3
-config_vm_async_delay: 60
+# VM guest credentials (for VMware Tools operations)
+config_vm_root_user: "{{ secrets.VM_ROOT_USER | default('root') }}"
+config_vm_root_password: "{{ secrets.VM_ROOT_PASSWORD | default('') }}"
 
-# --- Global Validation Settings ---
-config_vm_enable_validation: true
-config_vm_validation_enable_logging: true
-config_vm_validation_log_level: "INFO"
-config_vm_validation_log_path: "logs"
-config_vm_validation_log_format: "json"
 
-# --- Global System Settings ---
-config_vm_timezone: "UTC"
-config_vm_update_system: true
-config_vm_update_system_security: true
-config_vm_enable_services: true
-config_vm_start_services: true
+# --- Provisioning Validation Settings ---
+# Set to true to fail the playbook if VM has connectivity issues after provisioning
+# Set to false to allow provisioning to succeed even if ping/SSH fails (manual fix required)
+config_fail_on_connectivity_issues: true
 
-# --- Logging Settings ---
+# Logging
 log_path: "logs"
 enable_connection_logging: false
+
+# VM Default VM sizing
+config_vm_memory_mb: 4096
+config_vm_cpu_count: 2
+config_vm_disk_size_gb: 60
+config_vm_disk_type: "thin"

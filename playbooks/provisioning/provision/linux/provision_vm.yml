@@ -1,23 +1,30 @@
 ---
+
 - name: "Linux VM Provisioning from Template"
+  # Target hosts can be passed dynamically; defaults to all if not specified
   hosts: "{{ target_hosts | default('all') }}"
   any_errors_fatal: true
   gather_facts: false
   connection: local
-  serial: 1
+  serial: "{{ vm_parallel_count | default(5) }}"
   tags: [provision, linux]
 
+  # Executed before roles. Useful for logging, validation, or pre-checks.
   pre_tasks:
     - name: "Display provisioning method"
       debug:
         msg: "Using template-based provisioning method"
-
   roles:
+    # Creates a Linux VM from a specified vCenter template.
+    # The 'vm_provisioning_method' variable tells the role to use
+    # template-based provisioning rather than custom specs.
     - role: provisioning/vmware_provisioning
       tags: [provision]
       vars:
         vm_provisioning_method: template
 
+    # After creation, this role checks that the VM exists, is powered on,
+    # and matches expected configuration parameters (datacenter, cluster, etc.).
     - role: provisioning/vm_validation
       tags: [validation]
       vars:

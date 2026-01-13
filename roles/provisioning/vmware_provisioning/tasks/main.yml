@@ -10,7 +10,7 @@
 
 - name: "Provision VM in vCenter"
   include_tasks: create_vm.yml
-  tags: 
+  tags:
     - provision
     - vm_creation
   when: not (dry_run | default(false) | bool)
@@ -36,6 +36,46 @@
     - provision
     - validation
     - ssh
-  when: 
+  when:
     - not (dry_run | default(false) | bool)
     - config_validate_ssh | default(true)
+
+- name: "Report provisioning issues"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "⚠️  VM PROVISIONING ISSUES DETECTED"
+      - "========================================="
+      - "VM: {{ config_vm_name }}"
+      - "Issues found:"
+      - "{{ vm_provisioning_issues | default([]) | join('\n') }}"
+      - "========================================="
+      - "Note: VM was created but has connectivity issues"
+      - "Manual intervention may be required"
+      - "========================================="
+  when:
+    - not ansible_check_mode
+    - vm_provisioning_issues is defined
+    - vm_provisioning_issues | length > 0
+
+- name: "Fail if critical provisioning issues detected"
+  ansible.builtin.fail:
+    msg: |
+      ❌ VM provisioning completed with CRITICAL issues
+      
+      VM: {{ config_vm_name }}
+      IP: {{ config_vm_network_start_ip }}
+      
+      Issues:
+      {{ vm_provisioning_issues | default([]) | join('\n  - ') }}
+      
+      The VM was created in vCenter but has connectivity problems.
+      Check the VM console and network configuration.
+  when:
+    - not ansible_check_mode
+    - config_fail_on_connectivity_issues | default(false) | bool
+    - vm_provisioning_issues is defined
+    - vm_provisioning_issues | length > 0
+  tags:
+    - provision
+    - validation

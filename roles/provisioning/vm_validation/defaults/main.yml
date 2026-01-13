@@ -1,9 +1,7 @@
 ---
-# VM Validation Role Configuration
-# This file contains default settings for VM validation and reporting
 
-# VM Configuration Defaults (can be overridden by inventory variables)
-# These reference vmware_vm_config variables from the vmware_provisioning role
-config_vm_environment: "{{ vmware_vm_config.environment }}"
-config_vm_host_name: "{{ config_vm_name }}"
+# VM environment (e.g., "production", "staging", "development")
+config_vm_environment: "unknown"
 
+# VM hostname (defaults to config_vm_name if not set)
+config_vm_host_name: "{{ config_vm_name | default('unknown') }}"

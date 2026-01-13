@@ -1,6 +1,4 @@
 ---
-# vCenter Connection Role - Variable Validation Tasks
-# Validates required variables for vCenter connectivity
 
 - name: "Validate vCenter connection variables"
   assert:
@@ -14,6 +12,8 @@
     - vcenter
     - validation
     - variables
+  notify:
+    - Log vCenter variable validation success
 
 - name: "Validate vCenter host format"
   assert:
@@ -26,6 +26,8 @@
     - vcenter
     - validation
     - format
+  notify:
+    - Log vCenter host format validation
 
 - name: "Validate vCenter credentials format"
   assert:
@@ -40,6 +42,8 @@
     - vcenter
     - validation
     - credentials
+  notify:
+    - Log vCenter credentials validation
 
 - name: "Set vCenter connection values from inventory variables"
   set_fact:
@@ -51,3 +55,5 @@
     - vcenter
     - validation
     - config
+  notify:
+    - Refresh vCenter configuration cache

@@ -58,7 +58,10 @@
 - name: "Determine final SSH status"
   ansible.builtin.set_fact:
     ssh_is_ready: "{{ (ssh_auth_test.rc is defined and ssh_auth_test.rc == 0) or (ssh_port_available | default(false)) }}"
-  when: not ansible_check_mode
+    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['SSH connectivity failed - port not reachable or authentication failed'] if not ((ssh_auth_test.rc is defined and ssh_auth_test.rc == 0) or (ssh_port_available | default(false))) else []) }}"
+  when:
+    - not ansible_check_mode
+    - vm_is_pingable | default(false)
 
 - name: "Final SSH status summary"
   ansible.builtin.debug:

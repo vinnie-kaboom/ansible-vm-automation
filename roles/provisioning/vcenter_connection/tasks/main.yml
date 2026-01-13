@@ -11,7 +11,7 @@
 
 - name: "Include vCenter connection logging tasks"
   include_tasks: logging.yml
-  when: config_vm_validation_enable_logging | bool
+  when: config_vcenter_logging_enable | default(false) | bool
   tags:
     - vcenter
     - logging

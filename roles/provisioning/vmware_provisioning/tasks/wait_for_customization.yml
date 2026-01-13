@@ -1,6 +1,4 @@
 ---
-# Wait for VMware Tools and Guest Customization
-# Waits for VM to be fully ready with network configuration
 
 - name: "Wait for VMware Tools to become available"
   community.vmware.vmware_guest_tools_wait:
@@ -13,8 +11,8 @@
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
-  retries: 3
-  delay: 10
+  retries: "{{ config_vm_max_retries | default(3) | int }}"
+  delay: "{{ config_vm_retry_delay | default(10) | int }}"
   register: vmtools_wait
 
 - name: "Wait for guest OS customization to complete"
@@ -31,12 +29,73 @@
     vm_info.instance.hw_power_status is defined and
     vm_info.instance.hw_power_status == "poweredOn" and
     vm_info.instance.guest_tools_status is defined and
-    vm_info.instance.guest_tools_status == "guestToolsRunning"
-  retries: "{{ config_vm_wait_for_guest_state_retries }}"
-  delay: "{{ config_vm_wait_for_guest_state_delay }}"
+    vm_info.instance.guest_tools_status == "guestToolsRunning" and
+    (vm_info.instance.customization_info is not defined or
+     vm_info.instance.customization_info.status is not defined or
+     vm_info.instance.customization_info.status != "TOOLSDEPLOYPKG_RUNNING")
+  retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
+  delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
+  failed_when: false
+
+- name: "Check if customization failed"
+  ansible.builtin.set_fact:
+    customization_failed: true
+  when:
+    - not ansible_check_mode
+    - vm_info.instance is defined
+    - vm_info.instance.customization_info is defined
+    - vm_info.instance.customization_info.status is defined
+    - vm_info.instance.customization_info.status == "TOOLSDEPLOYPKG_IDLE"
+
+- name: "Retrieve customization log file from VM"
+  community.vmware.vmware_guest_file_operation:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    vm_id: "{{ config_vm_name }}"
+    vm_username: "{{ config_vm_root_user }}"
+    vm_password: "{{ config_vm_root_password }}"
+    fetch:
+      src: "/var/log/vmware-imc/toolsDeployPkg.log"
+      dest: "/tmp/{{ config_vm_name }}_toolsDeployPkg.log"
+  delegate_to: localhost
+  register: log_fetch
+  ignore_errors: true
+  when:
+    - not ansible_check_mode
+    - customization_failed | default(false)
+
+- name: "Display customization log contents"
+  ansible.builtin.command:
+    cmd: "cat /tmp/{{ config_vm_name }}_toolsDeployPkg.log"
+  register: log_contents
+  delegate_to: localhost
+  ignore_errors: true
+  when:
+    - not ansible_check_mode
+    - customization_failed | default(false)
+    - log_fetch is succeeded
+
+- name: "Show customization error details"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "CUSTOMIZATION FAILED FOR {{ config_vm_name }}"
+      - "========================================="
+      - "Customization Status: {{ vm_info.instance.customization_info.status | default('Unknown') }}"
+      - "Error Message: {{ vm_info.instance.customization_info.errorMessage | default('No error message') }}"
+      - ""
+      - "Log file contents from /var/log/vmware-imc/toolsDeployPkg.log:"
+      - "{{ log_contents.stdout_lines | default(['Could not retrieve log file']) }}"
+      - "========================================="
+  when:
+    - not ansible_check_mode
+    - customization_failed | default(false)
 
 - name: "Get detailed VM network information"
   community.vmware.vmware_guest_info:

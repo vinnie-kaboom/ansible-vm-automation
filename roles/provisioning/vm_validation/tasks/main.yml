@@ -1,8 +1,7 @@
 ---
-# Main validation tasks
 - name: "Starting VM validation"
   debug:
-    msg: "Validating {{ config_vm_host_name }}"
+    msg: "Validating {{ config_vm_name }}"
   tags: always
 
 - name: "Initialize validation results"
@@ -21,9 +20,10 @@
   include_tasks: validate_resources.yml
   tags: validation
 
-- name: "Validate network configuration"
-  include_tasks: validate_network.yml
-  tags: validation
+#- name: "Validate network configuration"
+#  include_tasks: validate_network.yml
+#  tags: validation
+
 
 - name: "Generate validation report"
   include_tasks: generate_report.yml

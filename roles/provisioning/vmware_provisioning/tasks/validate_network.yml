@@ -52,6 +52,7 @@
 - name: "Set VM pingable status"
   ansible.builtin.set_fact:
     vm_is_pingable: "{{ ping_result.rc == 0 }}"
+    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['Network connectivity failed - VM not reachable via ping'] if ping_result.rc != 0 else []) }}"
   when: not ansible_check_mode
 
 - name: "Display ping result"

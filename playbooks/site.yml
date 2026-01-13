@@ -1,47 +1,74 @@
 ---
-# Main Site Playbook - VM Provisioning Automation
-#
-# PLAYBOOK PURPOSE:
-#   Complete end-to-end VM provisioning automation
-#   Orchestrates VM creation, validation, and testing
+# ===================================================================================
+# PLAYBOOK: Main Site Playbook - VM Provisioning Automation
+# ===================================================================================
+# PURPOSE:
+#   Orchestrates the complete end-to-end virtual machine provisioning workflow.
+#   This includes connectivity validation, VM creation, configuration validation,
+#   and post-provisioning checks. Designed for CI/CD or controlled infrastructure
+#   automation environments.
+# ===================================================================================
 #
 # WORKFLOW OVERVIEW:
 #   1. Test vCenter connectivity and permissions
-#   2. Provision Linux VMs in vCenter
-#   3. Provision Windows VMs in vCenter (if needed)
+#   2. Provision Linux virtual machines in vCenter
+#   3. Provision Windows virtual machines (optional)
 #   4. Validate VM configuration and connectivity
-#   5. Perform post-provisioning checks
+#   5. Perform post-provisioning checks and cleanup
 #
-# USAGE:
+# USAGE EXAMPLES:
 #   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags provision
 #   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --limit cce3_gpc_linux --tags provision
 #   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags validation
 #
-# HOST GROUPS:
-#   - runner: GitHub Actions runner / control node
+# INVENTORY GROUPS:
+#   - runner: GitHub Actions runner / control node (local execution)
 #   - cce3_gpc_linux: Linux virtual machines to provision
 #   - cce3_gpc_windows: Windows virtual machines to provision
+# ===================================================================================
 
 # ================================================================================
 # VM PROVISIONING ORCHESTRATION
 # ================================================================================
+# Each imported playbook represents a distinct workflow stage.
+# Tags are used to control which steps run during execution.
+# ================================================================================
 
-# Import vCenter connectivity testing
-- import_playbook: provisioning/testing/test_vcenter.yml
-  tags: [validation, vcenter, connectivity]
-
-# Import Linux VM provisioning playbook
-- import_playbook: provisioning/provision/linux/provision_vm.yml
-  tags: [provision, linux]
-
-# Import Windows VM provisioning playbook
-#- import_playbook: provisioning/provision/windows/provision_windows_vm.yml
-#  tags: [provision, windows]
-
-# Import VM status and validation checks (only run after VMs are provisioned)
-- import_playbook: provisioning/testing/check_vm_status.yml
+# -------------------------------------------------------------------------------
+# STEP 1: Post-Provisioning Status and Validation
+# -------------------------------------------------------------------------------
+# Performs VM operational checks and configuration validation.
+# Typically executed after provisioning is complete.
+- import_playbook: provisioning/testing/log-vm-parameters.yml
   tags: [status, verification, post_provision]
 
-# Import cleanup operations (for error handling)
+# -------------------------------------------------------------------------------
+# STEP 2: vCenter Connectivity Testing
+# -------------------------------------------------------------------------------
+# Validates vCenter access, credentials, and API connectivity.
+# Ensures environment readiness before provisioning begins.
+- import_playbook: provisioning/testing/connection-parameters.yml
+  tags: [validation, vcenter, connectivity]
+
+# -------------------------------------------------------------------------------
+# STEP 3: Linux VM Provisioning
+# -------------------------------------------------------------------------------
+# Creates and configures Linux virtual machines using templates or specs.
+- import_playbook: provisioning/provision/linux/provision_linux_vm.yml
+  tags: [provision, linux]
+
+# -------------------------------------------------------------------------------
+# STEP 4: Windows VM Provisioning (Optional)
+# -------------------------------------------------------------------------------
+# Uncomment to enable Windows VM provisioning in mixed environments.
+# Disabled by default for Linux-only workflows.
+# - import_playbook: provisioning/provision/windows/provision_windows_vm.yml
+#   tags: [provision, windows]
+
+# -------------------------------------------------------------------------------
+# STEP 5: Error Handling and Cleanup
+# -------------------------------------------------------------------------------
+# Performs cleanup operations if provisioning fails or validation errors occur.
+# Ensures environment consistency by removing partially created VMs.
 - import_playbook: provisioning/error_handling/cleanup.yml
-#  tags: [cleanup, error_handling]
+  tags: [cleanup, error_handling]

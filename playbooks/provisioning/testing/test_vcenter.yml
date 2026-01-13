@@ -1,14 +1,13 @@
 ---
-- name: "vCenter Connectivity Test"
+
+- name: "Check VM Configuration Status"
   hosts: "{{ target_hosts | default('all') }}"
-  any_errors_fatal: true
-  gather_facts: true
+  any_errors_fatal: false
+  gather_facts: false
   connection: local
 
-
-
   roles:
-    - role: provisioning/vcenter_connection
-      tags:
-        - connectivity
-        - always
+    - role: provisioning/vm_validation
+      vars:
+        validation_mode: "display"
+      tags: [validation, status, display]

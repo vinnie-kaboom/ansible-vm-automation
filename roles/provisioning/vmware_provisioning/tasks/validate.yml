@@ -29,3 +29,88 @@
   tags:
     - validation
     - always
+
+- name: "Query all VMs in vCenter to check for IP conflicts"
+  community.vmware.vmware_vm_info:
+    # Connection params (hostname, username, password, validate_certs) come from module_defaults
+    vm_type: vm
+  when: config_vm_network_start_ip is defined
+  delegate_to: localhost
+  ignore_errors: true
+  register: all_vms_info
+
+# Validate hostname follows RFC 952/1123 (required by VMware customization)
+- name: "Validate VM hostname format"
+  ansible.builtin.assert:
+    that:
+      - config_vm_name is defined
+      - config_vm_name | length > 0
+      - config_vm_name | length <= 63
+      - config_vm_name is match('^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$')
+      - config_vm_name is not search('_')
+    fail_msg: |
+      Invalid hostname '{{ config_vm_name }}'.
+      VMware customization requires RFC-compliant hostnames:
+      - Must start and end with alphanumeric character
+      - Can contain hyphens (but not underscores)
+      - Maximum 63 characters
+      - No special characters
+    success_msg: "Hostname '{{ config_vm_name }}' is RFC-compliant"
+  tags:
+    - validation
+    - always
+
+- name: "Check if any VM is already using the target IP"
+  ansible.builtin.set_fact:
+    conflicting_vms: "{{ all_vms_info.virtual_machines | default([]) | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | list }}"
+  when:
+    - all_vms_info is defined
+    - all_vms_info.virtual_machines is defined
+    - config_vm_network_start_ip is defined
+
+# Validate domain name format
+- name: "Validate domain name format"
+  ansible.builtin.assert:
+    that:
+      - config_vm_domain is defined
+      - config_vm_domain | length > 0
+      - config_vm_domain is match('^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?(\\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)*$')
+    fail_msg: "Invalid domain name '{{ config_vm_domain }}'. Must be RFC-compliant."
+    success_msg: "Domain name '{{ config_vm_domain }}' is valid"
+  when: config_vm_domain is defined
+  tags:
+    - validation
+    - always
+
+- name: "Warn if IP address is already assigned to another VM"
+  ansible.builtin.debug:
+    msg:
+      - "⚠️  WARNING: IP address {{ config_vm_network_start_ip }} is already assigned to another VM in vCenter!"
+      - "Target VM: {{ config_vm_name }}"
+      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='guest_name') | list }}"
+      - "Power State(s): {{ conflicting_vms | map(attribute='power_state') | list }}"
+      - "This WILL cause guest customization to fail on the new VM."
+      - "Action required:"
+      - "  - Change the IP address in inventory for {{ config_vm_name }}"
+      - "  - Or power off/delete the conflicting VM(s)"
+  when:
+    - conflicting_vms is defined
+    - conflicting_vms | length > 0
+
+# Validate network configuration variables are defined
+- name: "Validate network configuration"
+  ansible.builtin.assert:
+    that:
+      - config_vm_network_start_ip is defined
+      - config_vm_network_start_ip | length > 0
+      - config_vm_network_gateway is defined
+      - config_vm_network_gateway | length > 0
+      - config_vm_network_netmask is defined
+      - config_vm_network_netmask | length > 0
+      - config_vm_network_dns_servers is defined
+      - config_vm_network_dns_servers | length > 0
+    fail_msg: "Network configuration variables are missing or empty. Check IP, gateway, netmask, and DNS servers."
+    success_msg: "Network configuration variables are defined"
+  tags:
+    - validation
+    - always
