@@ -1,4 +1,6 @@
 ---
+# Handlers for vcenter_connection role
+
 - name: "Log connection failure"
   debug:
     msg: "vCenter connection failed: {{ vcenter_host }}"
@@ -8,3 +10,65 @@
   debug:
     msg: "Cleaning up vCenter connection"
   listen: "cleanup_connection"
+
+# Variable validation handlers
+- name: "Log vCenter variable validation success"
+  debug:
+    msg: "vCenter connection variables validated successfully"
+
+- name: "Log vCenter host format validation"
+  debug:
+    msg: "vCenter host format validated: {{ vcenter_host }}"
+
+- name: "Log vCenter credentials validation"
+  debug:
+    msg: "vCenter credentials format validated"
+
+- name: "Refresh vCenter configuration cache"
+  debug:
+    msg: "vCenter configuration cache refreshed"
+
+# API version handlers
+- name: "vcenter_api_success"
+  debug:
+    msg: "vCenter API version check passed"
+
+- name: "vcenter_api_failure"
+  debug:
+    msg: "vCenter API version check failed"
+
+# Datacenter handlers
+- name: "vcenter_datacenter_success"
+  debug:
+    msg: "Datacenter access verified"
+
+- name: "vcenter_datacenter_failure"
+  debug:
+    msg: "Datacenter access verification failed"
+
+# Cluster handlers
+- name: "vcenter_cluster_success"
+  debug:
+    msg: "Cluster access verified"
+
+- name: "vcenter_cluster_failure"
+  debug:
+    msg: "Cluster access verification failed"
+
+# Datastore handlers
+- name: "vcenter_datastore_success"
+  debug:
+    msg: "Datastore access verified"
+
+- name: "vcenter_datastore_failure"
+  debug:
+    msg: "Datastore access verification failed"
+
+# Logging handlers
+- name: "Restart logging service"
+  debug:
+    msg: "Logging service restart requested (no-op in this context)"
+
+- name: "Rotate connection logs"
+  debug:
+    msg: "Connection log rotation requested"
