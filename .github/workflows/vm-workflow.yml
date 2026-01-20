@@ -31,3 +31,14 @@ jobs:
       limit: 'xxxxxxxxxxxxx01_green_linux'
       check_mode: false
 
+  # Post-merge status - runs after vm-provisioning completes and posts result to PR
+  post-merge-status:
+    name: 📋 Post Merge Status
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && always() }}
+    needs: [vm-provisioning]
+    uses: operations-support/ansible-golden/.github/workflows/pr-status.yml@main
+    secrets: inherit
+    with:
+      status: ${{ needs.vm-provisioning.result }}
+      job_name: 'VM Provisioning'
+
