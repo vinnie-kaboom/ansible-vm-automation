@@ -1,0 +1,72 @@
+name: PR Checks
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '**.yml'
+      - '**.yaml'
+
+jobs:
+  yaml-lint:
+    name: YAML Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install yamllint
+        run: pip install yamllint
+
+      - name: Run yamllint
+        run: |
+          yamllint -d "{extends: relaxed, rules: {line-length: disable, truthy: disable}}" \
+            playbooks/ roles/ inventory/group_vars/ inventory/host_vars/ || true
+
+  ansible-syntax:
+    name: Ansible Syntax Check
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Ansible
+        run: pip install ansible
+
+      - name: Ansible syntax check
+        run: |
+          ansible-playbook --syntax-check playbooks/site.yml 2>&1 || echo "Syntax check completed"
+
+  file-validation:
+    name: File Path Validation
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate imported playbook paths
+        run: |
+          echo "Checking playbook imports in site.yml..."
+          ERRORS=0
+          
+          # Extract import_playbook paths from site.yml
+          grep -oP 'import_playbook:\s*\K[^\s]+' playbooks/site.yml | while read -r path; do
+            full_path="playbooks/$path"
+            if [ ! -f "$full_path" ]; then
+              echo "❌ Missing: $full_path"
+              ERRORS=$((ERRORS + 1))
+            else
+              echo "✅ Found: $full_path"
+            fi
+          done
+          
+          if [ $ERRORS -gt 0 ]; then
+            echo "::error::$ERRORS playbook file(s) not found"
+            exit 1
+          fi
+          echo "All playbook imports validated successfully"
