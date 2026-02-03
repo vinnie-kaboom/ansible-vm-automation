@@ -1,0 +1,12 @@
+---
+galaxy_info:
+  author: VM Automation Team
+  description: Validates Ansible inventory structure using ansible-inventory --list
+  license: MIT
+  min_ansible_version: "2.9"
+  platforms:
+    - name: Generic
+      versions:
+        - all
+
+dependencies: []

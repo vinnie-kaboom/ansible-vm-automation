@@ -1,0 +1,74 @@
+---
+# Inventory Validation Role - Main Tasks
+# Validates inventory structure using ansible-inventory --list
+
+- name: "Set inventory file path"
+  ansible.builtin.set_fact:
+    inventory_file_path: "{{ inventory_file | default(playbook_dir + '/../inventory/hosts.ini') }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Validate inventory structure with ansible-inventory"
+  ansible.builtin.command:
+    cmd: "ansible-inventory -i {{ inventory_file_path }} --list"
+  register: inventory_validation_result
+  changed_when: false
+  failed_when: false
+  delegate_to: localhost
+  tags:
+    - inventory
+    - validation
+
+- name: "Parse inventory validation output"
+  ansible.builtin.set_fact:
+    inventory_data: "{{ inventory_validation_result.stdout | from_json }}"
+  when: inventory_validation_result.rc == 0
+  tags:
+    - inventory
+    - validation
+
+- name: "Set validation failure when inventory parse fails"
+  ansible.builtin.set_fact:
+    inventory_validation_failed: true
+    inventory_validation_error: "{{ inventory_validation_result.stderr | default('Unknown error parsing inventory') }}"
+  when: inventory_validation_result.rc != 0
+  tags:
+    - inventory
+    - validation
+
+- name: "Validate required groups exist"
+  ansible.builtin.include_tasks: validate_groups.yml
+  when: inventory_validation_result.rc == 0
+  tags:
+    - inventory
+    - validation
+
+- name: "Validate host configurations"
+  ansible.builtin.include_tasks: validate_hosts.yml
+  when:
+    - inventory_validation_result.rc == 0
+    - validate_host_configs | default(true) | bool
+  tags:
+    - inventory
+    - validation
+
+- name: "Generate inventory validation report"
+  ansible.builtin.include_tasks: generate_report.yml
+  tags:
+    - inventory
+    - validation
+    - report
+
+- name: "Fail if inventory validation errors detected"
+  ansible.builtin.fail:
+    msg: |
+      Inventory validation failed:
+      {{ inventory_validation_errors | default([]) | join('\n  - ') }}
+  when:
+    - fail_on_inventory_errors | default(true) | bool
+    - inventory_validation_errors is defined
+    - inventory_validation_errors | length > 0
+  tags:
+    - inventory
+    - validation

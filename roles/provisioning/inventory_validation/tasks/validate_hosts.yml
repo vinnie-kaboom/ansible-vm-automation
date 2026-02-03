@@ -1,0 +1,64 @@
+---
+# Validate host configurations in inventory
+
+- name: "Initialize host validation results"
+  ansible.builtin.set_fact:
+    hosts_missing_ansible_host: []
+    hosts_with_invalid_ip: []
+  tags:
+    - inventory
+    - validation
+
+- name: "Extract all hosts from inventory metadata"
+  ansible.builtin.set_fact:
+    all_inventory_hosts: "{{ inventory_data._meta.hostvars | default({}) }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Check hosts for ansible_host variable"
+  ansible.builtin.set_fact:
+    hosts_missing_ansible_host: "{{ hosts_missing_ansible_host + [item.key] }}"
+  loop: "{{ all_inventory_hosts | dict2items }}"
+  when:
+    - item.key != 'localhost'
+    - item.value.ansible_host is not defined
+    - require_ansible_host | default(false) | bool
+  loop_control:
+    label: "{{ item.key }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Validate IP address format for ansible_host"
+  ansible.builtin.set_fact:
+    hosts_with_invalid_ip: "{{ hosts_with_invalid_ip + [item.key + ' (' + (item.value.ansible_host | default('undefined')) + ')'] }}"
+  loop: "{{ all_inventory_hosts | dict2items }}"
+  when:
+    - item.key != 'localhost'
+    - item.value.ansible_host is defined
+    - item.value.ansible_host | ansible.utils.ipaddr == false
+    - validate_ip_format | default(true) | bool
+  loop_control:
+    label: "{{ item.key }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Add missing ansible_host to validation errors"
+  ansible.builtin.set_fact:
+    inventory_validation_errors: "{{ inventory_validation_errors | default([]) + ['Host missing ansible_host: ' + item] }}"
+  loop: "{{ hosts_missing_ansible_host }}"
+  when: hosts_missing_ansible_host | length > 0
+  tags:
+    - inventory
+    - validation
+
+- name: "Add invalid IP addresses to validation errors"
+  ansible.builtin.set_fact:
+    inventory_validation_errors: "{{ inventory_validation_errors | default([]) + ['Invalid IP address for host: ' + item] }}"
+  loop: "{{ hosts_with_invalid_ip }}"
+  when: hosts_with_invalid_ip | length > 0
+  tags:
+    - inventory
+    - validation

@@ -35,6 +35,14 @@
 # ================================================================================
 
 # -------------------------------------------------------------------------------
+# STEP 0: Inventory Structure Validation
+# -------------------------------------------------------------------------------
+# Validates inventory file structure before any provisioning operations.
+# Ensures groups exist and host configurations are valid.
+- import_playbook: provisioning/testing/validate_inventory.yml
+  tags: [inventory, validation, pre_provision]
+
+# -------------------------------------------------------------------------------
 # STEP 1: Post-Provisioning Status and Validation
 # -------------------------------------------------------------------------------
 # Performs VM operational checks and configuration validation.

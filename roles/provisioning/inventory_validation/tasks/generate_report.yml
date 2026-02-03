@@ -1,0 +1,63 @@
+---
+# Generate inventory validation report
+
+- name: "Count inventory statistics"
+  ansible.builtin.set_fact:
+    inventory_stats:
+      total_groups: "{{ (inventory_data.keys() | list | reject('equalto', '_meta') | reject('equalto', 'all') | list | length) | default(0) }}"
+      total_hosts: "{{ (inventory_data._meta.hostvars | default({}) | length) | default(0) }}"
+      empty_groups: "{{ empty_groups | default([]) | length }}"
+      validation_errors: "{{ inventory_validation_errors | default([]) | length }}"
+  when: inventory_validation_result.rc == 0
+  tags:
+    - inventory
+    - validation
+    - report
+
+- name: "Display inventory validation report"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "INVENTORY VALIDATION REPORT"
+      - "========================================="
+      - "Inventory file: {{ inventory_file_path }}"
+      - "Parse status: {{ 'SUCCESS' if inventory_validation_result.rc == 0 else 'FAILED' }}"
+      - "-----------------------------------------"
+      - "Total groups: {{ inventory_stats.total_groups | default('N/A') }}"
+      - "Total hosts: {{ inventory_stats.total_hosts | default('N/A') }}"
+      - "Empty groups: {{ inventory_stats.empty_groups | default('N/A') }}"
+      - "Validation errors: {{ inventory_stats.validation_errors | default('N/A') }}"
+      - "========================================="
+  when: inventory_validation_result.rc == 0
+  tags:
+    - inventory
+    - validation
+    - report
+
+- name: "Display validation errors if any"
+  ansible.builtin.debug:
+    msg:
+      - "VALIDATION ERRORS:"
+      - "{{ inventory_validation_errors | default([]) | join('\n') }}"
+  when:
+    - inventory_validation_errors is defined
+    - inventory_validation_errors | length > 0
+  tags:
+    - inventory
+    - validation
+    - report
+
+- name: "Display parse error if inventory failed to load"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "INVENTORY VALIDATION FAILED"
+      - "========================================="
+      - "Inventory file: {{ inventory_file_path }}"
+      - "Error: {{ inventory_validation_error | default('Unknown error') }}"
+      - "========================================="
+  when: inventory_validation_result.rc != 0
+  tags:
+    - inventory
+    - validation
+    - report

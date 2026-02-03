@@ -1,0 +1,28 @@
+---
+# Inventory Structure Validation Playbook
+# Validates inventory files using ansible-inventory --list before provisioning
+
+- name: "Validate Inventory Structure"
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  tags: [inventory, validation, pre_provision]
+
+  vars:
+    # Override inventory file path if needed
+    # inventory_file: "{{ playbook_dir }}/../../../inventory/hosts.ini"
+    
+    # Validation settings
+    fail_on_inventory_errors: true
+    validate_host_configs: true
+    warn_on_empty_groups: true
+    
+    # Required groups for provisioning workflow
+    required_inventory_groups:
+      - runner
+      - linux_hosts
+      - windows_hosts
+
+  roles:
+    - role: provisioning/inventory_validation
+      tags: [inventory, validation]

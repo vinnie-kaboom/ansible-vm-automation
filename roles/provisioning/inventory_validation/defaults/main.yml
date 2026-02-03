@@ -1,0 +1,25 @@
+---
+# Inventory Validation Role - Default Variables
+
+# Fail playbook if inventory validation errors are detected
+fail_on_inventory_errors: true
+
+# Validate host configurations (ansible_host, IP format)
+validate_host_configs: true
+
+# Require ansible_host variable for non-localhost hosts
+require_ansible_host: false
+
+# Validate IP address format for ansible_host values
+validate_ip_format: true
+
+# Warn when groups have no hosts
+warn_on_empty_groups: true
+
+# Required inventory groups (empty by default, customize per environment)
+required_inventory_groups: []
+# Example:
+# required_inventory_groups:
+#   - linux_hosts
+#   - windows_hosts
+#   - runner

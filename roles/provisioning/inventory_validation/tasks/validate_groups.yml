@@ -1,0 +1,51 @@
+---
+# Validate required inventory groups exist
+
+- name: "Initialize group validation results"
+  ansible.builtin.set_fact:
+    missing_groups: []
+    empty_groups: []
+  tags:
+    - inventory
+    - validation
+
+- name: "Check for required groups"
+  ansible.builtin.set_fact:
+    missing_groups: "{{ missing_groups + [item] }}"
+  loop: "{{ required_inventory_groups | default([]) }}"
+  when: item not in (inventory_data.keys() | list)
+  tags:
+    - inventory
+    - validation
+
+- name: "Check for empty groups (warning only)"
+  ansible.builtin.set_fact:
+    empty_groups: "{{ empty_groups + [item.key] }}"
+  loop: "{{ inventory_data | dict2items }}"
+  when:
+    - item.key not in ['_meta', 'all']
+    - item.value.hosts is defined
+    - item.value.hosts | length == 0
+    - warn_on_empty_groups | default(true) | bool
+  loop_control:
+    label: "{{ item.key }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Add missing groups to validation errors"
+  ansible.builtin.set_fact:
+    inventory_validation_errors: "{{ inventory_validation_errors | default([]) + ['Missing required group: ' + item] }}"
+  loop: "{{ missing_groups }}"
+  when: missing_groups | length > 0
+  tags:
+    - inventory
+    - validation
+
+- name: "Log empty groups warning"
+  ansible.builtin.debug:
+    msg: "Warning: The following groups have no hosts: {{ empty_groups | join(', ') }}"
+  when: empty_groups | length > 0
+  tags:
+    - inventory
+    - validation
