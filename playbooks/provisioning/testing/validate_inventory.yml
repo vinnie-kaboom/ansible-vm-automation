@@ -3,7 +3,7 @@
 # Validates inventory files using ansible-inventory --list before provisioning
 
 - name: "Validate Inventory Structure"
-  hosts: localhost
+  hosts: runner
   gather_facts: false
   connection: local
   tags: [inventory, validation, pre_provision]
