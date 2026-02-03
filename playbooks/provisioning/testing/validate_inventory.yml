@@ -18,10 +18,9 @@
     warn_on_empty_groups: true
     
     # Required groups for provisioning workflow
+    # Only require runner group - other groups are optional
     required_inventory_groups:
       - runner
-      - linux_hosts
-      - windows_hosts
 
   roles:
     - role: provisioning/inventory_validation
