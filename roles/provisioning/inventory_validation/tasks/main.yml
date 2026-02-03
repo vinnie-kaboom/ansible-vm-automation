@@ -4,7 +4,17 @@
 
 - name: "Set inventory file path"
   ansible.builtin.set_fact:
-    inventory_file_path: "{{ inventory_dir }}/hosts.ini"
+    inventory_file_path: "{{ inventory_file | default(inventory_dir ~ '/hosts.ini') }}"
+  tags:
+    - inventory
+    - validation
+
+- name: "Debug inventory path"
+  ansible.builtin.debug:
+    msg:
+      - "inventory_file: {{ inventory_file | default('not set') }}"
+      - "inventory_dir: {{ inventory_dir | default('not set') }}"
+      - "inventory_file_path: {{ inventory_file_path }}"
   tags:
     - inventory
     - validation
@@ -16,6 +26,14 @@
   changed_when: false
   failed_when: false
   delegate_to: localhost
+  tags:
+    - inventory
+    - validation
+
+- name: "Debug inventory groups found"
+  ansible.builtin.debug:
+    msg: "Groups found: {{ (inventory_validation_result.stdout | from_json).keys() | list }}"
+  when: inventory_validation_result.rc == 0
   tags:
     - inventory
     - validation
