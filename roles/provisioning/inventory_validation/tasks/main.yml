@@ -4,7 +4,7 @@
 
 - name: "Set inventory file path"
   ansible.builtin.set_fact:
-    inventory_file_path: "{{ inventory_file | default(playbook_dir + '/../inventory/hosts.ini') }}"
+    inventory_file_path: "{{ inventory_dir }}/hosts.ini"
   tags:
     - inventory
     - validation
