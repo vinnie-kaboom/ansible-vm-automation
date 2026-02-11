@@ -2,7 +2,7 @@
 - name: "Windows VM Provisioning"
   hosts: "{{ target_hosts | default('all') }}"
   any_errors_fatal: true
-  gather_facts: true
+  gather_facts: false
   connection: local
 
   vars:
