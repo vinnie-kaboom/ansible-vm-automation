@@ -3,8 +3,8 @@
   block:
     - name: "Collect required parameters for template validation"
       ansible.builtin.set_fact:
-        _template_name: "{{ config_vm_template | default(vm_template | default(template_name | default(config_template | default(vm_template_name | default(None))))) }}"
-        _template_folder: "{{ vm_folder | default(template_folder | default(None)) }}"
+        _template_name: "{{ config_vm_template | default('') }}"
+        _template_folder: "{{ vm_folder | default(template_folder | default('')) }}"
         _use_content_library: "{{ (use_content_library | default(false)) or (content_library_name is defined) }}"
       tags: [provision, validation]
 
@@ -16,9 +16,12 @@
     - name: "Assert template name provided"
       ansible.builtin.assert:
         that:
-          - _template_name is not none
+          - config_vm_template is defined
           - _template_name | length > 0
-        fail_msg: "Template name is required for template-based provisioning."
+        fail_msg: >-
+          config_vm_template is not set for host '{{ inventory_hostname }}'.
+          Define it in the appropriate zone or host group_vars file
+          (e.g., inventory/group_vars/<zone>.yml).
         success_msg: "Template '{{ _template_name }}' will be validated."
       tags: [provision, validation]
 

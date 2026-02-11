@@ -1,0 +1,57 @@
+---
+# Test: validate_config.yml produces a clear error when config_vm_template is missing,
+# and passes when it is set.
+
+# Test 1: Missing config_vm_template should fail with an actionable message
+- name: "Test - template validation fails with clear message when template is missing"
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    config_vm_name: "test-vm"
+    config_vm_template: ""
+    vcenter_datacenter: "test-dc"
+    vcenter_host: "vcenter.test"
+    validation_results:
+      config: "PENDING"
+      resources: "PENDING"
+      network: "PENDING"
+  tasks:
+    - name: "Include validate_config tasks"
+      ansible.builtin.include_tasks:
+        file: "../../../roles/provisioning/vm_validation/tasks/validate_config.yml"
+      ignore_errors: true
+      register: validation_run
+
+    - name: "Assert validation failed as expected"
+      ansible.builtin.assert:
+        that:
+          - validation_results.config == "FAILED"
+        fail_msg: "Expected config validation to FAIL when config_vm_template is empty"
+        success_msg: "PASS - validation correctly failed for missing template"
+
+# Test 2: Defined config_vm_template should pass
+- name: "Test - template validation passes when template is set"
+  hosts: localhost
+  gather_facts: false
+  connection: local
+  vars:
+    config_vm_name: "test-vm"
+    config_vm_template: "RHEL_9_Template"
+    vcenter_datacenter: "test-dc"
+    vcenter_host: "vcenter.test"
+    validation_results:
+      config: "PENDING"
+      resources: "PENDING"
+      network: "PENDING"
+  tasks:
+    - name: "Include validate_config tasks"
+      ansible.builtin.include_tasks:
+        file: "../../../roles/provisioning/vm_validation/tasks/validate_config.yml"
+
+    - name: "Assert validation passed"
+      ansible.builtin.assert:
+        that:
+          - validation_results.config == "PASSED"
+        fail_msg: "Expected config validation to PASS when config_vm_template is set"
+        success_msg: "PASS - validation correctly passed for defined template"

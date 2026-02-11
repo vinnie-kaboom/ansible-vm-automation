@@ -5,3 +5,7 @@ config_vm_environment: "unknown"
 
 # VM hostname (defaults to config_vm_name if not set)
 config_vm_host_name: "{{ config_vm_name | default('unknown') }}"
+
+# VM template name — must be set in zone or host group_vars
+# Left empty so validation produces a clear error when missing
+config_vm_template: ""
