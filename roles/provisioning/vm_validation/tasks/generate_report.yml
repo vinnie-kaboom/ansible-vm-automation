@@ -1,16 +1,10 @@
 ---
 # Generate validation results summary (console output only)
 # This task compiles all validation results and displays them to the user
-- name: "Gather date/time facts"
-  ansible.builtin.setup:
-    gather_subset:
-      - date_time
-  tags: validation
-
 - name: "Compile validation results"
   ansible.builtin.set_fact:
     validation_report:
-      timestamp: "{{ ansible_date_time.iso8601 }}"
+      timestamp: "{{ now(utc=true, fmt='%Y-%m-%dT%H:%M:%SZ') }}"
       vm_name: "{{ config_vm_name | default(inventory_hostname) }}"
       environment: "{{ config_vm_environment | default('UNKNOWN') }}"
       validations:
