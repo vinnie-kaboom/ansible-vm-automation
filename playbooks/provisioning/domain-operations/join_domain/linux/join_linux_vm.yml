@@ -1,0 +1,52 @@
+---
+
+# Joins Linux VMs to Active Directory domain using SSSD and realmd
+
+# - name: Join Linux VM to Domain
+#   hosts: "{{ target_hosts | default('all') }}"   # cce3_gpc_linux
+#   any_errors_fatal: true
+#   gather_facts: true
+#   connection: local
+#   serial: "{{ vm_parallel_count | default(5) }}"
+
+#   vars:
+#     ansible_user: "{{ secrets.ANSIBLE_USER | default('root') }}"
+#     ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+#     ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default('') }}"
+#     domain_admin_user: "{{ secrets.DOMAIN_ADMIN_USER }}"
+#     domain_admin_password: "{{ secrets.DOMAIN_ADMIN_PASSWORD }}"
+
+#   tasks:
+#     - name: Execute Linux domain join workflow
+#       include_role:
+#         name: domain/join_domain
+#         tasks_from: domain_linux
+#       tags: [domain_join, linux]
+
+- name: Join Linux VM to Domain
+  hosts: "{{ target_hosts | default('all') }}"   # cce3_gpc_linux
+  any_errors_fatal: true
+  gather_facts: true
+  connection: local
+  serial: "{{ vm_parallel_count | default(5) }}"
+  become: yes
+
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('root') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default('') }}"
+    domain_admin_user: "{{ secrets.DOMAIN_ADMIN_USER }}"
+    domain_admin_password: "{{ secrets.DOMAIN_ADMIN_PASSWORD }}"
+    config_vm_name: "{{ vm_name | default(inventory_hostname) }}"
+    config_domain_name: "{{ domain_name }}"
+    config_domain_realm: "{{ domain_name | upper }}"
+    config_domain_ou_linux: "{{ linux_ou | default('') }}"
+    admin_user: "{{ domain_admin_user }}"
+    admin_password: "{{ domain_admin_password }}"
+
+  tasks:
+    - name: Execute Linux domain join workflow
+      include_role:
+        name: domain/join_domain
+        tasks_from: domain_linux
+      tags: [domain_join, linux]

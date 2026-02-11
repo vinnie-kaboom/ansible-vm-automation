@@ -1,0 +1,19 @@
+---
+# Joins Windows VMs to Active Directory domain using native Windows methods
+
+- name: Join Windows VM to Domain
+  hosts: "{{ target_hosts | default('all') }}"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: local
+
+  tasks:
+    - name: Execute Windows domain join workflow
+      include_role:
+        name: domain/join_domain
+        tasks_from: windows
+      tags: [domain_join, windows]
+      # Implementation: roles/domain/join_domain/tasks/domain_windows.yml
+      # Variables come from inventory group_vars/network_xx_orgengr.yml:
+      #   - domain_name, domain_admin_user, domain_admin_password, windows_ou
+
