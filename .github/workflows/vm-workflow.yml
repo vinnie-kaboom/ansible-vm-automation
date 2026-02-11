@@ -1,4 +1,5 @@
-name: VM Provisioning Workflow
+---
+name: Domain Join Workflow
 
 on:
   pull_request:
@@ -15,19 +16,39 @@ jobs:
     secrets: inherit
     with:
       playbook: 'playbooks/site.yml'
-      tags: 'validation'
-      limit: 'runner'
+      tags: 'validation'      # validation only
+      limit: 'all_servers'
       check_mode: false
+
+  preflight:
+    name: 🔍 Domain Join Prechecks
+    if: ${{ github.event_name == 'pull_request' }}
+    needs: pr-validation       # run after pr-validation
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'validation'
 
   # Actual VM provisioning and post-provision checks - runs when PR is merged to main
   vm-provisioning:
     name: 🚀 VM Provisioning - Create VMs
     if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
     uses: operations-support/ansible-golden/.github/workflows/vm-operations.yml@main
+    needs: [preflight]         # optional, ensures preflight completed before provisioning
     secrets: inherit
     with:
       playbook: 'playbooks/site.yml'
-      tags: 'provision,status,validation'
-      limit: 'xxxxxxxxxxxxx01_green_linux'
+      tags: 'provision,status,validation'  # Run both provisioning and status verification
+      limit: 'all_servers'
       check_mode: false
 
+  domain-join:
+    name: 🚀 Domain Join Automation
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    needs: vm-provisioning     # run after provisioning
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'domain_join'

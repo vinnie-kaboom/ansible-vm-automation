@@ -1,7 +1,0 @@
----
-- name: Verify connectivity to all managed hosts
-  hosts: all
-  gather_facts: false # No need to gather facts for a simple ping check
-  tasks:
-    - name: Test connectivity with ping module
-      ansible.builtin.ping:
