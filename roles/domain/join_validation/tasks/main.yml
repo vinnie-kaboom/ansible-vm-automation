@@ -1,0 +1,35 @@
+---
+
+#   Orchestrates domain join validation by detecting the operating system
+#   and routing to the appropriate OS-specific validation tasks.
+
+- name: Include Linux validation tasks
+  include_tasks: linux_validation.yml
+  when: ansible_system == 'Linux'
+  tags: validation
+
+# Include Windows validation tasks (if Windows OS detected)
+# Routes to windows_validation.yml for Windows-specific domain validation
+# Output: Runs 9 validation steps and sets windows_validation_success fact
+- name: Include Windows validation tasks
+  include_tasks: windows_validation.yml
+  when: ansible_system == 'Win32NT' or ansible_os_family == 'Windows'
+  tags: validation
+
+# Set validation completion status
+# Aggregates OS-specific validation results into a unified completion status
+# Output: Sets domain_validation_completed (true/false) and validation_timestamp (ISO8601 format)
+- name: Set validation completion status
+  set_fact:
+    domain_validation_completed: "{{ linux_validation_success | default(false) or windows_validation_success | default(false) }}"
+    validation_timestamp: "{{ ansible_date_time.iso8601 }}"
+  tags: validation
+
+# Fail if validation was not successful
+# Critical checkpoint - stops playbook execution if domain validation failed
+# Output: Failure message with hostname if validation failed, or continues if successful
+- name: Fail if validation was not successful
+  fail:
+    msg: "Domain validation failed for {{ inventory_hostname }}"
+  when: not domain_validation_completed
+  tags: validation

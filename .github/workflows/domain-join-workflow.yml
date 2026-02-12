@@ -1,0 +1,43 @@
+---
+name: Domain Join Workflow
+
+on:
+  # Auto-trigger when VM Provisioning workflow completes on main
+  workflow_run:
+    workflows: ["VM Provisioning Workflow"]
+    types: [completed]
+    branches: [main]
+
+  # Also runs on PRs for preflight validation
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+  push:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # PR: Preflight checks (SSH, Python, sudo — VM must already exist)
+  # ---------------------------------------------------------------------------
+  preflight:
+    name: Preflight Checks
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'preflight'
+
+  # ---------------------------------------------------------------------------
+  # Merge to main (or after provisioning completes): Run domain join
+  # ---------------------------------------------------------------------------
+  join:
+    name: Join Domain
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'domain_join'

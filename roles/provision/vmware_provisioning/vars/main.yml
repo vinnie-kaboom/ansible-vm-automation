@@ -1,0 +1,34 @@
+---
+# Maps inventory variables to vmware_guest module parameters
+# Higher precedence than defaults/
+
+# Linux guest OS customization (applied when config_vm_os contains "Linux" or "RHEL")
+linux_customization:
+  hostname: "{{ config_vm_name.split('.')[0] }}"      # Short hostname
+  domain: "{{ config_vm_domain }}"
+  dns_servers: "{{ config_vm_network_dns_servers }}"
+  dns_suffix:
+    - "{{ config_vm_domain }}"
+
+# Windows guest OS customization (applied when config_vm_os contains "Windows")
+# Timezone IDs: 4=Pacific, 20=Central, 35=Eastern, 85=UTC
+windows_customization:
+  hostname: "{{ config_vm_name.split('.')[0] }}"
+  fullname: "{{ config_windows_fullname | default('Administrator') }}"
+  orgname: "{{ config_windows_orgname | default('Organization') }}"
+  password: "{{ config_windows_admin_password | default(config_vm_root_password) }}"
+  autologon: "{{ config_windows_autologon | default(false) }}"
+  autologoncount: "{{ config_windows_autologon_count | default(1) }}"
+  timezone: "{{ config_windows_timezone | default(35) }}"
+  domain: "{{ config_vm_domain }}"
+  domainadmin: "{{ config_windows_domain_admin | default(omit) }}"
+  domainadminpassword: "{{ config_windows_domain_admin_password | default(omit) }}"
+  joindomain: "{{ config_vm_domain if (config_windows_join_domain | default(false)) else omit }}"
+  dns_servers: "{{ config_vm_network_dns_servers }}"
+
+# VM hardware configuration
+#hardware_config:
+#  memory_mb: "{{ config_vm_memory_mb }}"
+#  num_cpus: "{{ config_vm_cpu_count }}"
+#  scsi: paravirtual
+

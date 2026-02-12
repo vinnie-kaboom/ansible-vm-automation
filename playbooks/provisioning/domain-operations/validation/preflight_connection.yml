@@ -1,0 +1,66 @@
+---
+# Pre-flight Connection Check - ALWAYS Shows Output
+# Uses changed_when: true to force task visibility in output
+
+- name: "🔍 pre-flight connection check"
+  hosts: "{{ ansible_host | default('all_servers') }}"
+  gather_facts: no
+  vars:
+    ansible_user: "{{ config_ssh_user }}"
+    ansible_password: "{{ config_ssh_password }}"
+
+  tasks:
+    - name: "🔍 Testing SSH connection to {{ inventory_hostname }}"
+      raw: echo "SSH connection test"
+      register: ssh_test
+      changed_when: true  # Force output visibility
+
+    - name: "✅ SSH CONNECTION PASSED - Host: {{ inventory_hostname }} | User: {{ ansible_user }}"
+      raw: echo "SSH OK"
+      changed_when: true  # Force output visibility
+      when: ssh_test.rc == 0
+
+    - name: "❌ SSH CONNECTION FAILED"
+      fail:
+        msg: "Cannot establish SSH connection to {{ inventory_hostname }}"
+      when: ssh_test.rc != 0
+
+    - name: "🐍 Testing Python availability"
+      raw: python3 --version 2>&1 || python --version 2>&1 || echo "Python not found"
+      register: python_test
+      changed_when: true  # Force output visibility
+
+    - name: "✅ PYTHON AVAILABLE - {{ python_test.stdout_lines[0] if python_test.stdout_lines else 'Version unknown' }}"
+      raw: echo "Python OK"
+      changed_when: true  # Force output visibility
+      when: "'Python' in python_test.stdout"
+
+    - name: "⚠️  PYTHON NOT FOUND - Some modules may not work"
+      raw: echo "Python missing"
+      changed_when: true  # Force output visibility
+      when: "'Python' not in python_test.stdout"
+
+    - name: "🔐 Testing sudo access"
+      shell: whoami
+      become: yes
+      register: sudo_test
+      changed_when: true  # Force output visibility
+      failed_when: false
+
+    - name: "✅ SUDO ACCESS CONFIRMED - Running as: {{ sudo_test.stdout }}"
+      raw: echo "Sudo OK"
+      changed_when: true  # Force output visibility
+      when: sudo_test.stdout == 'root'
+
+    - name: "❌ SUDO ACCESS FAILED"
+      fail:
+        msg: "Cannot escalate to root privileges. User {{ ansible_user }} may not have sudo access."
+      when: sudo_test.stdout != 'root'
+
+    - name: "🎉 PRE-FLIGHT CHECK COMPLETE - System ready for domain join!"
+      raw: echo "All checks passed"
+      changed_when: true  # Force output visibility
+      when:
+        - ssh_test.rc == 0
+        - "'Python' in python_test.stdout"
+        - sudo_test.stdout == 'root'

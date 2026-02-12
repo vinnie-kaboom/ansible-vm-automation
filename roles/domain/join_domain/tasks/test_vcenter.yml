@@ -1,0 +1,72 @@
+---
+
+# Test vCenter Connection
+- name: "Test vCenter Connection"
+  hosts: runner
+  gather_facts: false
+  connection: local
+  tags:
+    - vcenter
+    - test
+    - connection
+
+  vars:
+    # Map inventory variable names to role expected names
+    # Credentials come from GitHub Secrets via workflow (group_vars/all.yml)
+    vcenter_host: "{{ vcenter_hostname }}"
+    vcenter_user: "{{ vcenter_username }}"
+    vcenter_user_password: "{{ vcenter_password }}"
+    # All other vCenter variables (vcenter_port, vcenter_validate_certs, vcenter_datacenter,
+    # vcenter_cluster, vcenter_datastore, vcenter_folder) are used directly from inventory
+
+  tasks:
+    # CONFIGURATION VALIDATION - Ensure required vCenter settings are present
+    # Validates that essential vCenter connection parameters are defined
+    # Output: Success message or failure with details of missing configuration
+    - name: "Validate vCenter configuration"
+      assert:
+        that:
+          - vcenter_host is defined and vcenter_host != ""
+          - vcenter_user is defined and vcenter_user != ""
+          - vcenter_user_password is defined and vcenter_user_password != ""
+        fail_msg: "vCenter configuration is incomplete. Required: vcenter_hostname, vcenter_username, vcenter_password"
+        success_msg: "vCenter configuration validated successfully"
+      tags:
+        - vcenter
+        - config
+
+    # VCENTER CONNECTION VALIDATION - Execute comprehensive vCenter test
+    # Includes the vcenter_connection role which performs:
+    #   - Variable validation (ensures all required fields are defined)
+    #   - API connectivity test (verifies vCenter is reachable)
+    #   - Authentication validation (tests credentials)
+    #   - Resource verification (checks datacenter, cluster, datastore exist)
+    #   - Permission checks (validates user has required privileges)
+    # See roles/provision/vcenter_connection/tasks/main.yml for detailed implementation
+    # Will fail playbook if any validation fails
+    - name: "Include vCenter connection role"
+      include_role:
+        name: provision/vcenter_connection
+      tags:
+        - vcenter
+        - connection
+
+    # VALIDATION SUMMARY - Display successful vCenter connection test results
+    # Shows all validated vCenter configuration parameters
+    # Only displays if all previous validation tasks succeeded
+    # Confirms the vCenter environment is ready for VM vm-operations operations
+    - name: "Test vCenter connectivity summary"
+      debug:
+        msg: |
+          ✅ vCenter Connection Test Complete!
+          
+          Host: {{ vcenter_host }}
+          Datacenter: {{ vcenter_datacenter }}
+          Cluster: {{ vcenter_cluster }}
+          Datastore: {{ vcenter_datastore }}
+          Folder: {{ vcenter_folder }}
+          
+          All vCenter operations are ready!
+      tags:
+        - vcenter
+        - summary

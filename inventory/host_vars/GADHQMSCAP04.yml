@@ -1,0 +1,12 @@
+---
+#  Host-Specific Configuration
+config_vcenter_cluster: "DSCADA HQ GADHQVMES Hosts"
+config_vcenter_datastore: "GADHQVMES-Hyb-vSAN"
+config_vm_folder: "Satellite and Capsule Servers"
+config_vm_template: "cap-sat-template-hq"
+config_vm_environment: "production"
+
+linux_ou: "OU=MGMT,OU=Servers,OU=Computers Managed,DC=XXX,DC=XXX"
+windows_ou: "OU=Windows,OU=Servers,DC=cce3,DC=gpc"
+
+config_vm_description: "configuration vm description"

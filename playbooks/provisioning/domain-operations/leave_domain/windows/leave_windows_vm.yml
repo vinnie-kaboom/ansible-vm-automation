@@ -1,0 +1,53 @@
+---
+# ==============================================================================
+# Windows Domain Leave Playbook
+# ==============================================================================
+#
+# PLAYBOOK PURPOSE:
+#   Remove Windows VMs from Active Directory domain
+#
+# INVENTORY REQUIREMENTS:
+#   - Host must be in 'domain_windows' group
+#   - Variables defined in group_vars/network_xx_orgengr.yml:
+#       • domain_name: AD domain (e.g., example.com)
+#       • domain_admin_user: Admin username with rights to remove computers
+#       • domain_admin_password: Admin password
+#
+# USAGE:
+#   ansible-playbook -i inventory/hosts.ini playbooks/provisioning/leave_domain/windows/leave_windows_vm.yml --ask-pass --ask-become-pass
+#
+# TAGS:
+#   - domain_leave: Run domain leave operations
+# ==============================================================================
+
+- name: Leave Windows VM from Domain
+  hosts: "{{ ansible_host | default('cce3_gpc_windows') }}"
+  gather_facts: no
+
+  tasks:
+    - name: Check if machine is domain joined
+      tags: [domain_leave]
+      win_shell: (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+      register: domain_status
+
+    - name: Leave domain
+      tags: [domain_leave]
+      win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: workgroup
+        workgroup_name: WORKGROUP
+      register: leave_result
+      when: domain_status.stdout | trim == "True"
+
+    - name: Reboot after domain leave
+      tags: [domain_leave]
+      win_reboot:
+        reboot_timeout: 600
+      when: leave_result.reboot_required | default(false)
+
+    - name: Display leave result
+      tags: [domain_leave]
+      debug:
+        msg: "Domain leave completed. Reboot required: {{ leave_result.reboot_required | default(false) }}"

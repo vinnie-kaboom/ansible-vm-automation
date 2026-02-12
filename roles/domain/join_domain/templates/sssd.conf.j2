@@ -1,0 +1,31 @@
+[sssd]
+domains = {{ domain_name }}
+config_file_version = 2
+services = nss, pam
+
+[domain/{{ domain_name }}]
+ad_domain = {{ domain_name }}
+krb5_realm = {{ domain_name | upper }}
+realmd_tags = manages-system joined-with-adcli
+cache_credentials = True
+id_provider = ad
+krb5_store_password_if_offline = True
+default_shell = /bin/bash
+ldap_id_mapping = True
+use_fully_qualified_names = False
+fallback_homedir = /home/%u@%d
+ad_gpo_map_remote_interactive = +gdm
+
+[pam]
+reconnection_retries = 3
+offline_credentials_expiration = 2
+offline_failed_login_attempts = 3
+offline_failed_login_delay = 5
+
+[nss]
+filter_users = root,ldap,named,avahi,haldaemon,dbus,radiusd,news,nscd
+filter_groups = root,ldap,named,avahi,haldaemon,dbus,radiusd,news,nscd
+reconnection_retries = 3
+entry_cache_timeout = 300
+entry_cache_user_timeout = 5400
+entry_cache_group_timeout = 5400

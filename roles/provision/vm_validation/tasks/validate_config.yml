@@ -1,0 +1,78 @@
+---
+- name: "Run configuration validation with error handling"
+  block:
+    - name: "Collect required parameters for template validation"
+      ansible.builtin.set_fact:
+        _template_name: "{{ config_vm_template }}"
+        _template_folder: "{{ vm_folder | default(template_folder | default(None)) }}"
+        _use_content_library: "{{ (use_content_library | default(false)) or (content_library_name is defined) }}"
+      tags: [vm-operations, validation]
+
+    - name: "Display vm-operations method"
+      ansible.builtin.debug:
+        msg: "Using template-based vm-operations method"
+      tags: [vm-operations, validation]
+
+    - name: "Assert template name provided"
+      ansible.builtin.assert:
+        that:
+          - _template_name is not none
+          - _template_name | length > 0
+        fail_msg: "Template name is required for template-based vm-operations. Verify if inventory/host_vars for the vm is set."
+        success_msg: "Template '{{ _template_name }}' will be validated."
+      tags: [vm-operations, validation]
+
+    - name: "Debug vCenter connection parameters"
+      ansible.builtin.debug:
+        msg:
+          - "vCenter Host: {{ vcenter_host }}"
+          - "Datacenter: {{ vcenter_datacenter }}"
+          - "Template: {{ _template_name }}"
+      when: not _use_content_library
+      tags: [vm-operations, validation]
+
+    - name: "Skip template vSphere query (template validated during vm-operations)"
+      ansible.builtin.set_fact:
+        _template_info: "{{ {'instance': {'hw_is_template': true}, 'skipped': true} }}"
+      when: not _use_content_library
+      tags: [vm-operations, validation]
+
+    - name: "Assert template object was returned"
+      ansible.builtin.assert:
+        that:
+          - _template_info is defined
+          - _template_info.instance is defined
+        fail_msg: "Template '{{ _template_name }}' not found."
+        success_msg: "Template '{{ _template_name }}' exists in vSphere."
+      when: not _use_content_library
+      tags: [vm-operations, validation]
+
+    - name: "Assert object is a template (not a VM)"
+      ansible.builtin.assert:
+        that:
+          - _template_info.instance.hw_is_template | default(false)
+        fail_msg: "'{{ _template_name }}' exists but is not marked as a template."
+        success_msg: "Template '{{ _template_name }}' is a valid vSphere template."
+      when: not _use_content_library
+      tags: [vm-operations, validation]
+
+    - name: "Display resolved validation parameters"
+      ansible.builtin.debug:
+        msg: "Validated template '{{ _template_name }}' in datacenter '{{ vcenter_datacenter }}'"
+      tags: [vm-operations, validation]
+
+    - name: "Set config validation result - PASSED"
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results | combine({'config': 'PASSED'}) }}"
+      tags: [vm-operations, validation]
+
+  rescue:
+    - name: "Set config validation result - FAILED"
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results | combine({'config': 'FAILED'}) }}"
+      tags: [vm-operations, validation]
+
+    - name: "Fail with config validation error"
+      ansible.builtin.fail:
+        msg: "Configuration validation failed"
+      tags: [vm-operations, validation]

@@ -1,74 +1,72 @@
 ---
 # ===================================================================================
-# PLAYBOOK: Main Site Playbook - VM Provisioning Automation
-# ===================================================================================
-# PURPOSE:
-#   Orchestrates the complete end-to-end virtual machine provisioning workflow.
-#   This includes connectivity validation, VM creation, configuration validation,
-#   and post-provisioning checks. Designed for CI/CD or controlled infrastructure
-#   automation environments.
+# PLAYBOOK: Main Site Playbook - VM Provisioning and Domain Join
 # ===================================================================================
 #
 # WORKFLOW OVERVIEW:
-#   1. Test vCenter connectivity and permissions
-#   2. Provision Linux virtual machines in vCenter
-#   3. Provision Windows virtual machines (optional)
-#   4. Validate VM configuration and connectivity
-#   5. Perform post-provisioning checks and cleanup
+#   1. Validate VM configuration (no VM needed)
+#   2. Test vCenter connectivity and permissions (no VM needed)
+#   3. Provision Linux VMs
+#   4. Provision Windows VMs (optional)
+#   5. Pre-flight connection check (VM must exist, before domain join)
+#   6. Domain join (VM must exist and be reachable)
+#   7. Error handling and cleanup
+#
+# TAG USAGE:
+#   --tags validation          Steps 1-2 (pre-provisioning checks, no VM needed)
+#   --tags vm-operations       Steps 3-4 (create VMs)
+#   --tags preflight           Step 5    (SSH/Python/sudo checks on live VM)
+#   --tags domain_join         Steps 5-6 (preflight + domain join)
+#   --tags cleanup             Step 7    (remove failed VMs)
 #
 # USAGE EXAMPLES:
-#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags provision
-#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --limit cce3_gpc_linux --tags provision
-#   ansible-playbook playbooks/site.yml -i inventory/hosts-back.bak --tags validation
-#
-# INVENTORY GROUPS:
-#   - runner: GitHub Actions runner / control node (local execution)
-#   - cce3_gpc_linux: Linux virtual machines to provision
-#   - cce3_gpc_windows: Windows virtual machines to provision
+#   ansible-playbook playbooks/site.yml --tags validation
+#   ansible-playbook playbooks/site.yml --tags vm-operations
+#   ansible-playbook playbooks/site.yml --tags domain_join
 # ===================================================================================
 
-# ================================================================================
-# VM PROVISIONING ORCHESTRATION
-# ================================================================================
-# Each imported playbook represents a distinct workflow stage.
-# Tags are used to control which steps run during execution.
-# ================================================================================
+# -------------------------------------------------------------------------------
+# STEP 1: VM Configuration Validation (no VM needed)
+# -------------------------------------------------------------------------------
+# Validates inventory variables, template names, and resource settings.
+- import_playbook: provisioning/vm-operations/test/log-vm-parameters.yml
+  tags: [validation, status]
 
 # -------------------------------------------------------------------------------
-# STEP 1: Post-Provisioning Status and Validation
-# -------------------------------------------------------------------------------
-# Performs VM operational checks and configuration validation.
-# Typically executed after provisioning is complete.
-- import_playbook: provisioning/testing/check_vm_status.yml
-  tags: [status, verification, post_provision]
-
-# -------------------------------------------------------------------------------
-# STEP 2: vCenter Connectivity Testing
+# STEP 2: vCenter Connectivity Testing (no VM needed)
 # -------------------------------------------------------------------------------
 # Validates vCenter access, credentials, and API connectivity.
-# Ensures environment readiness before provisioning begins.
-- import_playbook: provisioning/testing/test_vcenter.yml
+- import_playbook: provisioning/vm-operations/test/connection-parameters.yml
   tags: [validation, vcenter, connectivity]
 
 # -------------------------------------------------------------------------------
 # STEP 3: Linux VM Provisioning
 # -------------------------------------------------------------------------------
-# Creates and configures Linux virtual machines using templates or specs.
-- import_playbook: provisioning/provision/linux/provision_vm.yml
-  tags: [provision, linux]
+- import_playbook: provisioning/vm-operations/linux/provision_linux_vm.yml
+  tags: [vm-operations, linux]
 
 # -------------------------------------------------------------------------------
 # STEP 4: Windows VM Provisioning (Optional)
 # -------------------------------------------------------------------------------
-# Uncomment to enable Windows VM provisioning in mixed environments.
-# Disabled by default for Linux-only workflows.
-# - import_playbook: provisioning/provision/windows/provision_windows_vm.yml
-#   tags: [provision, windows]
+# Uncomment to enable Windows VM provisioning.
+# - import_playbook: provisioning/vm-operations/windows/provision_windows_vm.yml
+#   tags: [vm-operations, windows]
 
 # -------------------------------------------------------------------------------
-# STEP 5: Error Handling and Cleanup
+# STEP 5: Pre-flight Connection Check (VM must exist)
 # -------------------------------------------------------------------------------
-# Performs cleanup operations if provisioning fails or validation errors occur.
-# Ensures environment consistency by removing partially created VMs.
+# Tests SSH, Python, and sudo on the provisioned VM before domain join.
+- import_playbook: provisioning/domain-operations/validation/preflight_connection.yml
+  tags: [preflight, domain_join]
+
+# -------------------------------------------------------------------------------
+# STEP 6: Domain Join
+# -------------------------------------------------------------------------------
+- import_playbook: provisioning/domain-operations/join_domain/linux/join_linux_vm.yml
+  tags: [domain_join, linux]
+
+# -------------------------------------------------------------------------------
+# STEP 7: Error Handling and Cleanup
+# -------------------------------------------------------------------------------
 - import_playbook: provisioning/error_handling/cleanup.yml
   tags: [cleanup, error_handling]

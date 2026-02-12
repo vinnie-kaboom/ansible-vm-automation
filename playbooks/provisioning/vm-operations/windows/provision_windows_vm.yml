@@ -1,0 +1,30 @@
+---
+
+-
+- name: "Windows VM Provisioning"
+  # Target hosts can be passed dynamically; defaults to all if not specified
+  hosts: "{{ target_hosts | default('all') }}"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: local
+
+  # Set default connection parameters for all VMware modules in this play
+  # Eliminates need to repeat these 3 parameters in every VMware task
+  module_defaults:
+    group/vmware:
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  # Define any play-specific variables here.
+  # In this case, we explicitly set the guest OS type to Windows.
+  vars:
+    config_guest_os_type: windows
+
+  # Each role encapsulates a logical function:
+  # 1. vm-operations/vmware_provisioning → creates and configures the Windows VM
+  # -------------------------------------------------------------------------------
+  roles:
+    - role: provision/vmware_provisioning
+      tags: vm-operations
+      when: not (dry_run | default(false) | bool)

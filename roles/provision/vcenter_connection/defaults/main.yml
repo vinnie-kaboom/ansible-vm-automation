@@ -1,0 +1,31 @@
+---
+
+# Connection settings
+config_vcenter_connection_timeout: 30
+config_vcenter_connection_retry_attempts: 3
+config_vcenter_connection_delay: 5
+config_vcenter_connection_validate_certs: false
+config_vcenter_connection_retries: 3
+
+# Validation settings
+config_vcenter_validation_check_permissions: true
+config_vcenter_validation_check_api_version: true
+config_vcenter_validation_check_datacenter: true
+config_vcenter_validation_check_cluster: true
+config_vcenter_validation_min_api_version: "6.7"
+
+# Logging
+config_vcenter_logging_enable: false
+config_vcenter_logging_level: "INFO"
+config_vcenter_logging_path: "logs"
+config_vcenter_logging_format: "json"
+
+# Error handling
+config_vcenter_error_max_retries: 3
+config_vcenter_error_retry_delay: 5
+config_vcenter_error_fail_on_connection: true
+config_vcenter_error_fail_on_permission: true
+
+# File permissions
+config_log_file_permissions: "0644"
+config_log_dir_permissions: "0755"

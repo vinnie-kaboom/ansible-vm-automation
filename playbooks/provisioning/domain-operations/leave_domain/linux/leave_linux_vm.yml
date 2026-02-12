@@ -1,0 +1,231 @@
+---
+
+# Force Linux Domain Leave Playbook
+
+- name: Force Leave Linux VM from Domain
+  hosts: "{{ ansible_host | default('cce3_gpc_linux') }}"
+  become: yes
+  gather_facts: yes
+
+  tasks:
+    - name: Display current domain status
+      tags: [domain_leave]
+      command: realm list
+      register: current_status
+      changed_when: false
+      failed_when: false
+
+    - name: Show current status
+      debug:
+        msg: "{{ current_status.stdout_lines }}"
+
+    # =========================================================================
+    # ATTEMPT 1: Leave with credentials
+    # =========================================================================
+
+    - name: Attempt 1 - Leave domain with credentials
+      tags: [domain_leave]
+      block:
+        - name: Leave domain using realm with credentials
+          shell: |
+            echo '{{ domain_admin_password }}' | realm leave {{ domain_name }} \
+              --user={{ domain_admin_user.split('@')[0] }} \
+              --verbose
+          register: realm_leave_creds
+          no_log: true
+          failed_when: false
+
+        - name: Check if leave with credentials succeeded
+          debug:
+            msg: "Leave with credentials: {{ 'SUCCESS' if realm_leave_creds.rc == 0 else 'FAILED' }}"
+
+    # =========================================================================
+    # ATTEMPT 2: Force leave without credentials
+    # =========================================================================
+
+    - name: Attempt 2 - Force leave without credentials
+      tags: [domain_leave]
+      when: realm_leave_creds.rc != 0
+      block:
+        - name: Force leave using realm --remove
+          command: realm leave --remove
+          register: realm_leave_force
+          failed_when: false
+
+        - name: Check if forced leave succeeded
+          debug:
+            msg: "Forced leave: {{ 'SUCCESS' if realm_leave_force.rc == 0 else 'FAILED' }}"
+
+    # =========================================================================
+    # ATTEMPT 3: Manual cleanup (nuclear option)
+    # =========================================================================
+
+    - name: Attempt 3 - Manual cleanup
+      tags: [domain_leave, cleanup]
+      block:
+        - name: Stop SSSD service
+          service:
+            name: sssd
+            state: stopped
+          failed_when: false
+
+        - name: Kill any remaining SSSD processes
+          shell: killall -9 sssd sssd_be sssd_nss sssd_pam 2>/dev/null || true
+          failed_when: false
+
+        - name: Disable SSSD service
+          service:
+            name: sssd
+            enabled: no
+          failed_when: false
+
+        - name: Remove SSSD configuration
+          file:
+            path: /etc/sssd/sssd.conf
+            state: absent
+
+        - name: Remove SSSD database completely
+          file:
+            path: "{{ item }}"
+            state: absent
+          loop:
+            - /var/lib/sss/db
+            - /var/lib/sss/mc
+            - /var/lib/sss/pipes
+            - /var/lib/sss/pubconf
+
+        - name: Remove Kerberos keytab
+          file:
+            path: /etc/krb5.keytab
+            state: absent
+
+        - name: Clear realm configuration
+          shell: |
+            rm -f /etc/realmd.conf
+            rm -rf /var/cache/realmd/*
+          failed_when: false
+
+        - name: Remove computer from realm database
+          shell: |
+            # Remove realm configuration files
+            rm -f /usr/share/realmd/realmd-distro.conf
+            rm -f /etc/realmd.conf
+          failed_when: false
+
+        - name: Clear nscd cache
+          command: nscd -i passwd
+          failed_when: false
+          when: ansible_os_family == "RedHat"
+
+        - name: Clear sssd cache
+          command: sss_cache -E
+          failed_when: false
+
+    # =========================================================================
+    # ATTEMPT 4: Remove from realm using adcli
+    # =========================================================================
+
+    - name: Attempt 4 - Remove using adcli
+      tags: [domain_leave]
+      block:
+        - name: Delete computer account using adcli
+          shell: |
+            echo '{{ domain_admin_password }}' | adcli delete-computer \
+              --domain={{ domain_name }} \
+              --login-user={{ domain_admin_user.split('@')[0] }} \
+              --stdin-password \
+              {{ ansible_hostname | upper }}
+          register: adcli_delete
+          no_log: true
+          failed_when: false
+
+        - name: Check if adcli delete succeeded
+          debug:
+            msg: "Adcli delete: {{ 'SUCCESS' if adcli_delete.rc == 0 else 'FAILED' }}"
+
+    # =========================================================================
+    # VERIFICATION
+    # =========================================================================
+
+    - name: Verify domain leave
+      tags: [domain_leave]
+      block:
+        - name: Check realm status after cleanup
+          command: realm list
+          register: final_realm_status
+          changed_when: false
+          failed_when: false
+
+        - name: Check SSSD status
+          command: systemctl is-active sssd
+          register: sssd_status
+          changed_when: false
+          failed_when: false
+
+        - name: Check keytab
+          stat:
+            path: /etc/krb5.keytab
+          register: keytab_check
+
+        - name: Check SSSD config
+          stat:
+            path: /etc/sssd/sssd.conf
+          register: sssd_config_check
+
+        - name: Display final status
+          debug:
+            msg: |
+              ==========================================
+              FINAL STATUS
+              ==========================================
+              Realm shows domain: {{ 'YES ❌' if 'configured: kerberos-member' in final_realm_status.stdout else 'NO ✅' }}
+              SSSD running: {{ 'YES ❌' if sssd_status.rc == 0 else 'NO ✅' }}
+              Keytab exists: {{ 'YES ❌' if keytab_check.stat.exists else 'NO ✅' }}
+              SSSD config exists: {{ 'YES ❌' if sssd_config_check.stat.exists else 'NO ✅' }}
+              ==========================================
+
+        - name: Show realm output
+          debug:
+            msg: "{{ final_realm_status.stdout_lines }}"
+          when: final_realm_status.stdout != ""
+
+    # =========================================================================
+    # FINAL CLEANUP - If still showing as joined
+    # =========================================================================
+
+    - name: Final cleanup if still showing as joined
+      tags: [domain_leave]
+      when: "'configured: kerberos-member' in final_realm_status.stdout"
+      block:
+        - name: Remove realm membership file
+          file:
+            path: /var/lib/realmd/realmd-{{ domain_name }}
+            state: absent
+          failed_when: false
+
+        - name: Clear realm cache
+          shell: |
+            rm -rf /var/cache/realmd/*
+            rm -rf /var/lib/realmd/*
+          failed_when: false
+
+        - name: Restart realmd service
+          service:
+            name: realmd
+            state: restarted
+          failed_when: false
+
+        - name: Final realm check
+          command: realm list
+          register: absolute_final_check
+          changed_when: false
+          failed_when: false
+
+        - name: Display absolute final status
+          debug:
+            msg: |
+              ==========================================
+              ABSOLUTE FINAL CHECK
+              ==========================================
+              {{ absolute_final_check.stdout if absolute_final_check.stdout != '' else 'No domains configured ✅' }}
+              ==========================================

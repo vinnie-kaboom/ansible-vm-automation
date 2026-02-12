@@ -1,5 +1,0 @@
-#---
-
-# vCenter Connection Vars
-config_log_file_permissions: "0644"
-config_log_dir_permissions: "0755"

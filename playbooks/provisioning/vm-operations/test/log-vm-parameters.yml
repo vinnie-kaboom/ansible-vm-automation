@@ -1,0 +1,22 @@
+---
+
+- name: "Check VM Configuration Status"
+  hosts: runner
+  # hosts: "{{ target_hosts | default('all') }}"
+  any_errors_fatal: false
+  gather_facts: true
+  connection: local
+
+  # Set default connection parameters for all VMware modules in this play
+  # Eliminates need to repeat these 3 parameters in every VMware task
+  module_defaults:
+    group/vmware:
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  roles:
+    - role: provision/vm_validation
+      vars:
+        validation_mode: "display"
+      tags: [validation, status, display]

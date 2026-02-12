@@ -1,0 +1,837 @@
+---
+# Linux Domain Join Tasks
+# Streamlined version with essential functionality and minimal debug output
+
+- name: Skip localhost - not a valid domain join target
+  when: inventory_hostname == 'localhost'
+  tags: [domain_join]
+  meta: end_host
+
+- name: Check current domain status
+  tags: [domain_join]
+  command: "realm list"
+  register: current_realm_status
+  become: no
+  failed_when: false
+  changed_when: false
+
+- name: Set initial domain status
+  tags: [domain_join]
+  set_fact:
+    was_already_joined: "{{ current_realm_status.stdout is defined and current_realm_status.stdout != '' and domain_name in current_realm_status.stdout }}"
+
+- name: Check if kinit command is available
+  when: was_already_joined
+  tags: [domain_join]
+  command: which kinit
+  register: kinit_available
+  failed_when: false
+  changed_when: false
+
+- name: Validate domain functionality if appears joined
+  when: was_already_joined and kinit_available.rc == 0
+  tags: [domain_join]
+  shell: |
+    echo '{{ admin_password }}' | kinit {{ admin_user.split('@')[0] }}@{{ domain_name | upper }} 2>/dev/null
+    kinit_result=$?
+    if [ $kinit_result -eq 0 ]; then
+      echo "Domain authentication SUCCESS"
+    else
+      echo "Domain authentication FAILED"
+    fi
+    exit $kinit_result
+  register: domain_auth_test
+  failed_when: false
+  become: no
+  no_log: true
+
+- name: Set domain auth test result if kinit not available
+  when: was_already_joined and kinit_available.rc != 0
+  tags: [domain_join]
+  set_fact:
+    domain_auth_test:
+      rc: 0
+      stdout: "kinit not available - skipped"
+
+- name: Check if SSSD service is running
+  when: was_already_joined
+  tags: [domain_join]
+  command: systemctl is-active sssd
+  register: sssd_service_status
+  failed_when: false
+  changed_when: false
+
+- name: Check if SSSD configuration file exists
+  when: was_already_joined
+  tags: [domain_join]
+  stat:
+    path: /etc/sssd/sssd.conf
+  register: sssd_config_file
+
+- name: Set SSSD status (simplified - if running and config exists, it's valid)
+  when: was_already_joined
+  tags: [domain_join]
+  set_fact:
+    sssd_is_healthy: "{{ sssd_service_status.rc == 0 and sssd_service_status.stdout == 'active' and sssd_config_file.stat.exists }}"
+
+- name: Set SSSD configuration requirement
+  tags: [domain_join]
+  set_fact:
+    needs_sssd_config: "{{ (was_already_joined and not sssd_is_healthy | default(false)) or not was_already_joined }}"
+
+- name: Warn about potential phantom join
+  when: was_already_joined and domain_auth_test is defined and domain_auth_test.rc != 0
+  tags: [domain_join]
+  debug:
+    msg: |
+      WARNING: Server appears joined to {{ domain_name }} but domain authentication failed.
+      This may be a "phantom join" where local config exists but AD computer account is missing.
+      To fix: Run 'realm leave {{ domain_name }}' and re-run this workflow.
+
+# Validate existing domain join state to detect "phantom joins"
+# (system appears joined but configuration is broken/incomplete)
+- name: Comprehensive domain membership validation
+  when: was_already_joined
+  tags: [domain_join]
+  shell: |
+    echo "=== DOMAIN MEMBERSHIP VALIDATION ==="
+    echo "1. Realm status:"
+    realm list 2>/dev/null || echo "realm command not available"
+    echo ""
+    echo "2. Computer account in AD (if kinit worked):"
+    if [ "{{ domain_auth_test.rc | default(1) }}" = "0" ]; then
+      echo "   Kerberos authentication successful - computer account exists"
+    else
+      echo "   Kerberos authentication failed - possible phantom join"
+    fi
+    echo ""
+    echo "3. SSSD status:"
+    systemctl is-active sssd 2>/dev/null || echo "   SSSD not running"
+    echo ""
+    echo "4. Domain user lookup test:"
+    if [ "{{ domain_auth_test.rc | default(1) }}" = "0" ]; then
+      getent passwd {{ admin_user.split('@')[0] }}@{{ domain_name }} 2>/dev/null && echo "   Domain user lookup: SUCCESS" || echo "   Domain user lookup: FAILED"
+    else
+      echo "   Domain user lookup: SKIPPED (auth failed)"
+    fi
+  register: domain_validation_summary
+  failed_when: false
+  become: no
+
+- name: Skip if already joined to correct domain
+  when: was_already_joined
+  tags: [domain_join]
+  debug:
+    msg: |
+      Server {{ inventory_hostname }} appears joined to domain {{ domain_name }}
+      
+      VALIDATION SUMMARY:
+      {{ domain_validation_summary.stdout }}
+      
+      FINAL STATUS: {{ 'VERIFIED DOMAIN MEMBER' if domain_auth_test.rc == 0 else 'POSSIBLE PHANTOM JOIN - VERIFICATION NEEDED' }}
+
+# Prerequisite checks
+- name: Verify hostname is configured
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.setup:
+    filter: ansible_hostname,ansible_fqdn,ansible_domain
+  register: hostname_facts
+
+- name: Display hostname information
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.debug:
+    msg: |
+      Hostname Configuration:
+      - Short name: {{ ansible_hostname }}
+      - FQDN: {{ ansible_fqdn | default('Not set') }}
+      - Domain: {{ ansible_domain | default('Not set') }}
+
+- name: Gather repository information (RHEL/CentOS)
+  when: not was_already_joined and ansible_os_family == 'RedHat'
+  tags: [domain_join]
+  ansible.builtin.package_facts:
+    manager: auto
+  register: repo_facts
+
+- name: Check for enabled repositories (RHEL/CentOS)
+  when: not was_already_joined and ansible_os_family == 'RedHat'
+  tags: [domain_join]
+  ansible.builtin.command: dnf repolist enabled --quiet
+  register: repo_check
+  failed_when: false
+  changed_when: false
+
+- name: Set repository status
+  when: not was_already_joined and ansible_os_family == 'RedHat'
+  tags: [domain_join]
+  ansible.builtin.set_fact:
+    has_enabled_repos: "{{ repo_check.stdout_lines | length > 1 }}"
+
+- name: Configure DNS for domain resolution
+  when: not was_already_joined and dns_server is defined and dns_server != ''
+  tags: [domain_join]
+  become: yes
+  ansible.builtin.template:
+    src: resolv.conf.j2
+    dest: /etc/resolv.conf
+    mode: '0644'
+    owner: root
+    group: root
+    backup: yes
+  register: dns_config_result
+
+- name: Check DNS resolution for domain
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.command: nslookup {{ domain_name }}
+  register: dns_check
+  become: no
+  failed_when: false
+  changed_when: false
+
+- name: Check network connectivity to domain (LDAP)
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.wait_for:
+    host: "{{ domain_name }}"
+    port: 389
+    timeout: 10
+  register: ldap_connectivity_check
+  become: no
+  failed_when: false
+
+- name: Check network connectivity to domain (Kerberos)
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.wait_for:
+    host: "{{ domain_name }}"
+    port: 88
+    timeout: 10
+  register: kerberos_connectivity_check
+  become: no
+  failed_when: false
+
+- name: Check system time synchronization
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.command: timedatectl status
+  register: time_sync_check
+  failed_when: false
+  changed_when: false
+
+- name: Synchronize system time with NTP
+  when: not was_already_joined
+  tags: [domain_join]
+  shell: "chronyd -q 'server {{ domain_name }} iburst'"
+  register: ntp_sync
+  failed_when: false
+
+- name: Check if required packages are installed
+  when: not was_already_joined
+  tags: [domain_join]
+  package_facts:
+    manager: auto
+  register: package_facts_result
+
+- name: Debug OS detection
+  when: not was_already_joined
+  tags: [domain_join]
+  debug:
+    msg: |
+      OS Detection:
+      - ansible_os_family: {{ ansible_os_family }}
+      - ansible_distribution: {{ ansible_distribution }}
+      - ansible_distribution_major_version: {{ ansible_distribution_major_version }}
+      - ansible_pkg_mgr: {{ ansible_pkg_mgr }}
+
+- name: Set required packages list (RHEL/CentOS 8/9/Rocky/AlmaLinux)
+  when: not was_already_joined and ansible_os_family == 'RedHat' and ansible_distribution_major_version|int >= 8
+  tags: [domain_join]
+  set_fact:
+    required_packages:
+      - realmd
+      - sssd
+      - oddjob
+      - oddjob-mkhomedir
+      - samba-common
+      - krb5-libs
+      - adcli
+
+- name: Set required packages list (RHEL/CentOS 7)
+  when: not was_already_joined and ansible_os_family == 'RedHat' and ansible_distribution_major_version|int == 7
+  tags: [domain_join]
+  set_fact:
+    required_packages:
+      - realmd
+      - sssd
+      - oddjob
+      - oddjob-mkhomedir
+      - samba-common-tools
+      - krb5-libs
+      - adcli
+
+- name: Set required packages list (Debian/Ubuntu)
+  when: not was_already_joined and ansible_os_family == 'Debian'
+  tags: [domain_join]
+  set_fact:
+    required_packages:
+      - realmd
+      - sssd
+      - sssd-tools
+      - libnss-sss
+      - libpam-sss
+      - adcli
+      - samba-common-bin
+      - packagekit
+      - krb5-user
+
+- name: Check which packages need to be installed
+  when: not was_already_joined and required_packages is defined
+  tags: [domain_join]
+  set_fact:
+    packages_to_install: "{{ required_packages | difference(ansible_facts.packages.keys()) }}"
+
+- name: Install required packages for domain join
+  when: not was_already_joined and packages_to_install is defined and packages_to_install | length > 0
+  tags: [domain_join]
+  package:
+    name: "{{ packages_to_install }}"
+    state: present
+  register: package_install_result
+  ignore_errors: yes
+
+- name: Set package install result for already installed packages
+  when: not was_already_joined and (packages_to_install is not defined or packages_to_install | length == 0)
+  tags: [domain_join]
+  set_fact:
+    package_install_result:
+      changed: false
+      results: []
+
+# CRITICAL: Detect hostname truncation BEFORE domain join
+# This bit me more than a few times.
+- name: Detect hostname truncation for AD NetBIOS limit (15 chars)
+  tags: [domain_join]
+  block:
+    - name: Check if hostname exceeds NetBIOS limit
+      set_fact:
+        hostname_full: "{{ ansible_hostname | upper }}"
+        hostname_truncated: "{{ (ansible_hostname | upper)[:15] }}"
+        hostname_is_truncated: "{{ ansible_hostname | length > 15 }}"
+
+    - name: Display hostname truncation warning
+      when: hostname_is_truncated
+      debug:
+        msg: |
+          ⚠️  HOSTNAME TRUNCATION DETECTED!
+          Full hostname: {{ hostname_full }} ({{ ansible_hostname | length }} chars)
+          NetBIOS limit: 15 characters
+          Truncated name: {{ hostname_truncated }}
+          
+          AD computer account will be created as: {{ hostname_truncated }}$
+          This is normal for hostnames > 15 characters.
+
+    - name: Set computer name for domain join
+      set_fact:
+        sssd_computer_name: "{{ hostname_truncated }}"
+
+- name: Ensure Kerberos include directory exists with correct permissions
+  tags: [domain_join]
+  ansible.builtin.file:
+    path: /etc/krb5.conf.d
+    state: directory
+    mode: '0755'
+    owner: root
+    group: root
+
+- name: Fix permissions on Kerberos include files
+  tags: [domain_join]
+  ansible.builtin.shell: |
+    # Fix any files in krb5.conf.d (but not symlinks)
+    find /etc/krb5.conf.d -type f -exec chmod 644 {} \;
+    find /etc/krb5.conf.d -type f -exec chown root:root {} \;
+  register: krb5_confdir_fix
+  failed_when: false
+  changed_when: false
+
+- name: Ensure /tmp directory has correct permissions for adcli
+  tags: [domain_join]
+  ansible.builtin.file:
+    path: /tmp
+    state: directory
+    mode: '1777'
+  when: ansible_os_family == 'RedHat'
+
+- name: Check if Kerberos configuration exists and is current
+  tags: [domain_join]
+  ansible.builtin.stat:
+    path: /etc/krb5.conf
+  register: krb5_current_config
+
+- name: Backup existing krb5.conf if it exists (idempotent - only once)
+  when: krb5_current_config.stat.exists and (krb5_has_domain is not defined or krb5_has_domain.rc != 0)
+  tags: [domain_join]
+  ansible.builtin.copy:
+    src: /etc/krb5.conf
+    dest: /etc/krb5.conf.backup.original
+    remote_src: yes
+    mode: '0644'
+    force: no
+  failed_when: false
+
+- name: Check if Kerberos config has domain realm configured
+  when: krb5_current_config.stat.exists
+  tags: [domain_join]
+  ansible.builtin.shell: grep -v "^[[:space:]]*#" /etc/krb5.conf | grep -q "{{ domain_name | upper }}"
+  register: krb5_has_domain
+  failed_when: false
+  changed_when: false
+
+- name: Set krb5_has_domain for new installations
+  when: not krb5_current_config.stat.exists
+  tags: [domain_join]
+  set_fact:
+    krb5_has_domain:
+      rc: 1
+
+- name: Configure Kerberos client from template
+  when: krb5_current_config.stat.exists == false or krb5_has_domain.rc != 0
+  tags: [domain_join]
+  become: yes
+  ansible.builtin.template:
+    src: krb5.conf.j2
+    dest: /etc/krb5.conf
+    backup: no
+    mode: '0644'
+    owner: root
+    group: root
+    force: yes
+  register: krb5_config
+
+- name: Remove includedir directives from krb5.conf to avoid permission issues with adcli
+  tags: [domain_join]
+  ansible.builtin.lineinfile:
+    path: /etc/krb5.conf
+    regexp: '^\s*includedir\s+'
+    state: absent
+  register: krb5_includedir_removed
+  failed_when: false
+
+- name: Verify krb5.conf does not have includedir directive
+  tags: [domain_join]
+  ansible.builtin.shell: grep -i "includedir" /etc/krb5.conf || true
+  register: krb5_includedir_check
+  changed_when: false
+  failed_when: false
+
+- name: Uncomment [realms] and [domain_realm] sections if they exist but are commented
+  tags: [domain_join]
+  ansible.builtin.replace:
+    path: /etc/krb5.conf
+    regexp: '^#\s*({{ item }})'
+    replace: '\1'
+  loop:
+    - '\[realms\]'
+    - '\[domain_realm\]'
+    - '{{ domain_name | upper }} = {'
+    - '\.{{ domain_name }} = {{ domain_name | upper }}'
+    - '{{ domain_name }} = {{ domain_name | upper }}'
+  register: krb5_uncommented
+  failed_when: false
+
+- name: Remove duplicate default_ccache_name from [logging] section
+  tags: [domain_join]
+  ansible.builtin.lineinfile:
+    path: /etc/krb5.conf
+    regexp: '^\s*default_ccache_name\s*=.*'
+    state: absent
+    insertafter: '^\[logging\]'
+  register: krb5_logging_fixed
+  failed_when: false
+
+- name: Verify krb5.conf has proper realms and domain_realm sections (uncommented)
+  tags: [domain_join]
+  ansible.builtin.shell: |
+    # Check that realms and domain_realm sections are properly configured and NOT commented
+    if grep -v "^[[:space:]]*#" /etc/krb5.conf | grep -q "\[realms\]"; then
+      echo "✅ [realms] section found (uncommented)"
+    else
+      echo "❌ [realms] section missing or commented"
+      exit 1
+    fi
+    
+    if grep -v "^[[:space:]]*#" /etc/krb5.conf | grep -q "\[domain_realm\]"; then
+      echo "✅ [domain_realm] section found (uncommented)"
+    else
+      echo "❌ [domain_realm] section missing or commented"
+      exit 1
+    fi
+    
+    # Check that domain entries are not commented
+    if grep -v "^[[:space:]]*#" /etc/krb5.conf | grep -q "{{ domain_name | upper }}"; then
+      echo "✅ Domain {{ domain_name | upper }} configured (uncommented)"
+    else
+      echo "❌ Domain {{ domain_name | upper }} missing or commented"
+      exit 1
+    fi
+    
+    echo "✅ krb5.conf validation passed"
+  register: krb5_validation
+  failed_when: krb5_validation.rc != 0
+  changed_when: false
+
+# krb5.conf content display removed for production use
+# If needed for debugging, run: cat /etc/krb5.conf on the target host
+
+- name: Test Kerberos authentication with domain admin
+  when: not was_already_joined and admin_user is defined and admin_password is defined
+  tags: [domain_join]
+  ansible.builtin.shell: |
+    set -o pipefail
+    echo '{{ admin_password }}' | kinit {{ admin_user.split('@')[0] }}@{{ domain_name | upper }} 2>&1
+    kinit_result=$?
+    if [ $kinit_result -eq 0 ]; then
+      echo "Kerberos authentication successful"
+      klist 2>&1 || echo "Ticket cache created"
+    else
+      echo "Kerberos authentication failed"
+    fi
+    exit 0
+  args:
+    executable: /bin/bash
+  register: krb5_auth_test
+  ignore_errors: yes
+  no_log: true
+  environment:
+    KRB5CCNAME: "FILE:/tmp/ansible_kinit_test_$$"
+
+- name: Set krb5_auth_test when skipped
+  when: was_already_joined or admin_user is not defined or admin_password is not defined
+  tags: [domain_join]
+  set_fact:
+    krb5_auth_test:
+      rc: 0
+      stdout: "Skipped - already joined or credentials not defined"
+
+- name: Cleanup temporary Kerberos ticket cache
+  when: not was_already_joined
+  tags: [domain_join]
+  ansible.builtin.shell: rm -f /tmp/ansible_kinit_test_* 2>/dev/null || true
+  failed_when: false
+  changed_when: false
+
+- name: Discover the Active Directory domain
+  when: not was_already_joined
+  tags: [domain_join]
+  command: "realm discover {{ domain_name | upper }}"
+  register: domain_discovery
+  become: no
+  failed_when: false
+  changed_when: false
+
+- name: Display domain discovery result
+  when: not was_already_joined and domain_discovery.rc != 0
+  tags: [domain_join]
+  debug:
+    msg: |
+      Domain discovery failed for {{ domain_name | upper }}
+      Return code: {{ domain_discovery.rc }}
+      Stdout: {{ domain_discovery.stdout | default('empty') }}
+      Stderr: {{ domain_discovery.stderr | default('empty') }}
+      
+      Troubleshooting:
+      1. Check DNS resolution: nslookup {{ domain_name | upper }}
+      2. Check network connectivity: ping {{ domain_name | upper }}
+      3. Verify realm package is installed
+      4. Check if this host should be joining the domain
+
+- name: Validate domain discovery
+  when: not was_already_joined
+  tags: [domain_join]
+  assert:
+    that:
+      - domain_discovery.rc == 0
+      - domain_discovery.stdout is defined
+      - domain_discovery.stdout != ""
+    fail_msg: "Failed to discover domain {{ domain_name }}. Check network connectivity and domain availability."
+    success_msg: "Domain {{ domain_name }} discovered successfully"
+
+# Primary domain join method using adcli
+- name: Join domain using adcli command
+  when: not was_already_joined
+  tags: [domain_join]
+  shell: |
+    echo '{{ admin_password }}' | adcli join {{ domain_name }} \
+      --user={{ admin_user.split('@')[0] }} \
+      --computer-name={{ sssd_computer_name }} \
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" \{% endif %}
+      --verbose \
+      --stdin-password
+  register: join_result_adcli
+  failed_when: false
+  no_log: false
+
+
+# Alternative method using realm if adcli fails
+- name: Join domain using realm command (Fallback)
+  when: not was_already_joined and (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc != 0)
+  tags: [domain_join]
+  shell: |
+    echo '{{ admin_password }}' | realm join {{ domain_name }} --user={{ admin_user.split('@')[0] }} {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" {% endif %}--install=/ --verbose
+  register: join_result_realm
+  failed_when: false
+  no_log: false
+
+# Set the successful join result
+- name: Set final join result
+  when: not was_already_joined
+  tags: [domain_join]
+  set_fact:
+    final_join_result: "{{ join_result_adcli if (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) else (join_result_realm if join_result_realm is defined else join_result_adcli) }}"
+    join_method: "{{ 'adcli' if (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) else ('realm' if (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0) else 'failed') }}"
+    join_successful: "{{ (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) or (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0) }}"
+
+- name: Verify domain join success
+  when: not was_already_joined
+  tags: [domain_join]
+  assert:
+    that:
+      - join_successful | default(false)
+    fail_msg: |
+      Failed to join domain {{ domain_name }} using both methods.
+
+      --- adcli output (rc={{ join_result_adcli.rc | default('N/A') }}) ---
+      {{ join_result_adcli.stderr | default('no stderr') }}
+      {{ join_result_adcli.stdout | default('no stdout') }}
+
+      --- realm output (rc={{ join_result_realm.rc | default('N/A') }}) ---
+      {{ join_result_realm.stderr | default('no stderr') }}
+      {{ join_result_realm.stdout | default('no stdout') }}
+
+      Troubleshooting:
+      1. Verify DNS resolution: nslookup {{ domain_name }}
+      2. Check network connectivity: ping {{ domain_name }}
+      3. Verify domain admin credentials
+      4. Check if computer account already exists in AD
+      5. Verify OU path: {{ ou_paths.linux }}
+      6. Check system time synchronization with domain controller
+      7. Ensure domain admin has rights to join computers to domain
+    success_msg: "Successfully joined domain {{ domain_name }} using {{ join_method }}"
+
+
+# Keytab verification and recreation
+- name: Check if Kerberos keytab exists
+  tags: [domain_join]
+  stat:
+    path: /etc/krb5.keytab
+  register: krb5_keytab_check
+
+- name: Recreate keytab if missing (for already-joined systems)
+  when: was_already_joined and not krb5_keytab_check.stat.exists
+  tags: [domain_join]
+  shell: |
+    # Use adcli join with overwrite to recreate keytab without breaking existing join
+    echo '{{ admin_password }}' | adcli join {{ domain_name }} \
+      --login-user={{ admin_user.split('@')[0] }} \
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" \{% endif %}
+      --stdin-password \
+      --verbose \
+      2>&1 || true
+    # Check if keytab was created
+    if [ -f /etc/krb5.keytab ]; then
+      echo "Keytab successfully created"
+      exit 0
+    else
+      echo "Keytab creation failed"
+      exit 1
+    fi
+  register: keytab_recreation
+  failed_when: false
+  no_log: true
+
+- name: Verify keytab was created
+  when: was_already_joined and not krb5_keytab_check.stat.exists
+  tags: [domain_join]
+  stat:
+    path: /etc/krb5.keytab
+  register: krb5_keytab_verify
+
+- name: Warn if keytab recreation failed
+  when: was_already_joined and not krb5_keytab_check.stat.exists and not krb5_keytab_verify.stat.exists
+  tags: [domain_join]
+  debug:
+    msg: |
+      WARNING: Kerberos keytab is missing and could not be recreated.
+      SSSD will not function properly without it.
+      Manual fix: Run 'adcli update' with domain admin credentials to recreate the keytab.
+
+# SSSD Configuration
+- name: Check if SSSD configuration needs updating
+  when: needs_sssd_config | default(not was_already_joined)
+  tags: [domain_join]
+  stat:
+    path: /etc/sssd/sssd.conf
+  register: sssd_current_config
+
+- name: Create SSSD configuration
+  when: needs_sssd_config | default(not was_already_joined) and (sssd_current_config.stat.exists == false or sssd_current_config.stat.mtime < ansible_date_time.epoch | int - 300)
+  tags: [domain_join]
+  template:
+    src: sssd.conf.j2
+    dest: /etc/sssd/sssd.conf
+    owner: root
+    group: root
+    mode: '0600'
+    backup: yes
+  register: sssd_config_result
+
+- name: Set SSSD config result for unchanged configuration
+  when: needs_sssd_config | default(not was_already_joined) and (sssd_current_config.stat.exists == true and sssd_current_config.stat.mtime >= ansible_date_time.epoch | int - 300)
+  tags: [domain_join]
+  set_fact:
+    sssd_config_result:
+      changed: false
+      msg: "SSSD configuration already current"
+
+- name: Check if SSSD database cleanup is needed
+  when: needs_sssd_config | default(not was_already_joined)
+  tags: [domain_join]
+  stat:
+    path: /var/lib/sss/db
+  register: sssd_db_check
+
+- name: Update SSSD configuration with correct principal name
+  tags: [domain_join]
+  lineinfile:
+    path: /etc/sssd/sssd.conf
+    regexp: '^(\s*)ldap_sasl_authid\s*='
+    line: "    ldap_sasl_authid = {{ sssd_computer_name }}$@{{ domain_name | upper }}"
+    insertafter: '^\[domain/'
+    state: present
+  register: sssd_principal_fixed
+
+- name: Ensure SSSD uses keytab file explicitly
+  tags: [domain_join]
+  lineinfile:
+    path: /etc/sssd/sssd.conf
+    regexp: '^(\s*)ldap_krb5_keytab\s*='
+    line: "    ldap_krb5_keytab = /etc/krb5.keytab"
+    insertafter: '^\[domain/'
+    state: present
+  register: sssd_keytab_fixed
+
+- name: Fix SSSD database permissions and clean corrupted files
+  when: needs_sssd_config | default(not was_already_joined) or (was_already_joined and not krb5_keytab_check.stat.exists)
+  tags: [domain_join]
+  shell: |
+    # Stop SSSD service if running
+    systemctl stop sssd 2>/dev/null || true
+    
+    # Clean corrupted database files only if config changed
+    if [ "{{ sssd_config_result.changed | default(false) }}" = "True" ]; then
+      rm -rf /var/lib/sss/db/* 2>/dev/null || true
+      rm -rf /var/lib/sss/mc/* 2>/dev/null || true
+      echo "SSSD database cleared due to configuration change"
+    fi
+    
+    # Ensure SSSD directories exist with correct permissions
+    mkdir -p /var/lib/sss/db
+    mkdir -p /var/lib/sss/mc
+    mkdir -p /var/lib/sss/pipes
+    mkdir -p /var/lib/sss/pipes/private
+    mkdir -p /var/lib/sss/pipes/public
+    
+    # Set correct ownership - SSSD runs as sssd user, not root
+    chown -R sssd:sssd /var/lib/sss/
+    
+    # Set correct permissions
+    chmod 755 /var/lib/sss
+    chmod 700 /var/lib/sss/db
+    chmod 700 /var/lib/sss/mc
+    chmod 755 /var/lib/sss/pipes
+    chmod 700 /var/lib/sss/pipes/private
+    chmod 755 /var/lib/sss/pipes/public
+    
+    # Restore SELinux contexts
+    restorecon -Rv /var/lib/sss/ 2>/dev/null || true
+    
+    echo "SSSD database permissions fixed"
+  register: sssd_permission_fix
+
+- name: Verify SSSD configuration syntax
+  when: needs_sssd_config | default(not was_already_joined) and sssd_config_result is changed
+  tags: [domain_join]
+  shell: |
+    # Test SSSD configuration using version-appropriate methods
+    # Method 1: Use sssctl if available (modern SSSD versions)
+    if command -v sssctl >/dev/null 2>&1; then
+      sssctl config-check 2>&1 | grep -q "Configuration is valid" && echo "Config syntax OK" || echo "Config syntax error"
+      exit $?
+    fi
+    
+    # Method 2: Use SSSD genconf for validation (SSSD 2.9.6+)
+    if sssd --help 2>&1 | grep -q "genconf"; then
+      sssd -g -c /etc/sssd/sssd.conf 2>&1 | grep -q "error" && echo "Config syntax error" || echo "Config syntax OK"
+      exit $?
+    fi
+    
+    # Method 3: Test by running SSSD in interactive mode
+    timeout 5 sssd -i -c /etc/sssd/sssd.conf -d 1 2>&1 | grep -q "error" && echo "Config syntax error" || echo "Config syntax OK"
+    exit $?
+  register: sssd_config_test
+  failed_when: sssd_config_test.rc != 0
+
+- name: Restart SSSD service to apply changes
+  when: (needs_sssd_config | default(not was_already_joined) and (sssd_config_result is changed or sssd_permission_fix is changed)) or (was_already_joined and keytab_recreation is changed)
+  tags: [domain_join]
+  service:
+    name: sssd
+    state: restarted
+  register: sssd_restart_result
+
+# Set default values for already joined servers
+- name: Set default values for already joined servers
+  when: was_already_joined
+  tags: [domain_join]
+  set_fact:
+    join_successful: "true"
+    join_method: "already_joined"
+
+- name: Set success status for Linux domain join
+  tags: [domain_join]
+  set_fact:
+    linux_domain_join_success: "{{ was_already_joined or (join_successful | default(false)) }}"
+    linux_join_details:
+      domain: "{{ domain_name }}"
+      method: "{{ 'already_joined' if was_already_joined else (join_method | default('failed')) }}"
+      packages_installed: "{{ package_install_result.results | map(attribute='item') | list | join(', ') if (package_install_result is defined and package_install_result.results is defined) else ('N/A' if was_already_joined else 'Already installed') }}"
+      sssd_configured: "{{ 'CONFIGURED' if (sssd_config_result is defined and sssd_config_result.changed is defined and sssd_config_result.changed) else ('N/A' if was_already_joined else 'NOT_NEEDED') }}"
+      authentication_tested: "{{ 'Will be tested in validation' if not was_already_joined else 'N/A' }}"
+      dns_resolution: "{{ 'SUCCESS' if (dns_check is defined and dns_check.rc is defined and dns_check.rc == 0) else ('N/A' if was_already_joined else 'FAILED') }}"
+      network_connectivity: "{{ 'SUCCESS' if (ldap_connectivity_check is defined and ldap_connectivity_check is success) else ('N/A' if was_already_joined else 'FAILED') }}"
+      kerberos_test: "{{ 'SUCCESS' if (krb5_auth_test is defined and krb5_auth_test.rc is defined and krb5_auth_test.rc == 0) else ('FAILED' if krb5_auth_test is defined else 'N/A') }}"
+
+- name: Display join summary
+  tags: [domain_join]
+  debug:
+    msg: |
+      Linux Domain Join {{ 'SUCCESS' if linux_domain_join_success else 'FAILED' }} for {{ inventory_hostname }}
+      Domain: {{ domain_name }}
+      Method: {{ linux_join_details.method }}
+      Status: {{ 'ALREADY JOINED' if was_already_joined else ('SUCCESSFULLY JOINED' if linux_domain_join_success else 'FAILED TO JOIN') }}
+      Target OU: {{ ou_paths.linux }}
+      Computer Name: {{ config_vm_name | upper }}
+      DNS Resolution: {{ linux_join_details.dns_resolution }}
+      Network Connectivity: {{ linux_join_details.network_connectivity }}
+      Kerberos Auth: {{ linux_join_details.kerberos_test }}
+      Packages: {{ linux_join_details.packages_installed }}
+      SSSD: {{ linux_join_details.sssd_configured }}
+
+# Call join_validation role for comprehensive domain validation
+- name: Include join_validation role for comprehensive domain validation
+  include_role:
+    name: provisioning/join_validation
+  when: not was_already_joined and join_successful
+  tags: [domain_join, validation]

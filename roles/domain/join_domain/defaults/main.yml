@@ -1,0 +1,23 @@
+---
+# Domain Join Role Defaults
+config_domain_name: "{{ domain_name }}"
+config_domain_realm: "{{ domain_name | upper }}"
+# config_domain_ou_linux: "{{ linux_ou | default('') }}"
+admin_user: "{{ domain_admin_user }}"
+admin_password: "{{ domain_admin_password }}"
+
+# OU paths - loaded from inventory group_vars
+ou_paths:
+  linux: "{{ linux_ou | default('') }}"
+  windows: "{{ windows_ou | default('') }}"
+
+# Linux packages for domain join
+# NOTE: This is defined in inventory/group_vars/cce3_gpc_linux.yml
+# The inventory value takes precedence - this is just a fallback for other environments
+linux_packages: []
+
+required_packages: "{{ linux_packages }}"
+
+# Computer description in AD
+# NOTE: This should be defined per-host in inventory/host_vars/<hostname>.yml
+# Variable name: config_vm_description

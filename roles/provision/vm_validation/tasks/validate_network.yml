@@ -1,0 +1,30 @@
+---
+- name: "Run network validation with error handling"
+  block:
+    - name: "Get vCenter network list"
+      community.vmware.vmware_network_info:
+        hostname: "{{ vcenter_host }}"
+        datacenter: "{{ config_vcenter_datacenter }}"
+        validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+      delegate_to: localhost
+      register: network_info
+
+    - name: "Validate that network exists in vCenter"
+      ansible.builtin.assert:
+        that:
+          - config_vm_network in (network_info.networks | map(attribute='name') | list)
+        fail_msg: "Network '{{ config_vm_network }}' was not found in vCenter datacenter '{{ config_vcenter_datacenter }}'."
+        success_msg: "Network '{{ config_vm_network }}' exists in vCenter datacenter '{{ config_vcenter_datacenter }}'."
+
+    - name: "Set network validation result - PASSED"
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results | combine({'network': 'PASSED'}) }}"
+
+  rescue:
+    - name: "Set network validation result - FAILED"
+      ansible.builtin.set_fact:
+        validation_results: "{{ validation_results | combine({'network': 'FAILED'}) }}"
+
+    - name: "Log network validation failure"
+      ansible.builtin.debug:
+        msg: "Network validation failed - will be reported in validation summary"
