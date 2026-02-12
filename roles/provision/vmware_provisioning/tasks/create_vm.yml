@@ -86,9 +86,12 @@
 - name: "Update VM annotation"
   community.vmware.vmware_guest:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
-    annotation: "Created by Ansible Magic on {{ ansible_date_time.date }}"
+    annotation: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
     state: present
   when: not ansible_check_mode
   delegate_to: localhost
