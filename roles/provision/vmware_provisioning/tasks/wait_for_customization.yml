@@ -3,6 +3,9 @@
 - name: "Wait for VMware Tools to become available"
   community.vmware.vmware_guest_tools_wait:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   when: not ansible_check_mode
@@ -15,6 +18,9 @@
 - name: "Wait for guest OS customization to complete"
   community.vmware.vmware_guest_info:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   register: vm_info
@@ -34,6 +40,32 @@
   connection: local
   failed_when: false
 
+- name: "Wait for VM to obtain correct IP address"
+  community.vmware.vmware_guest_info:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+  register: vm_info
+  until: >
+    vm_info.instance is defined and
+    vm_info.instance.ipv4 is defined and
+    vm_info.instance.ipv4 is not none and
+    vm_info.instance.ipv4 == config_vm_network_start_ip
+  retries: 20
+  delay: 15
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  failed_when: false
+
+- name: "Post-customization wait for network stack to stabilize"
+  ansible.builtin.pause:
+    seconds: "{{ config_vm_post_boot_wait | default(30) | int }}"
+  when: not ansible_check_mode
+
 - name: "Check if customization failed"
   ansible.builtin.set_fact:
     customization_failed: true
@@ -47,6 +79,9 @@
 - name: "Retrieve customization log file from VM"
   community.vmware.vmware_guest_file_operation:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     vm_id: "{{ config_vm_name }}"
     vm_username: "{{ config_vm_root_user }}"
@@ -91,6 +126,9 @@
 - name: "Get detailed VM network information"
   community.vmware.vmware_guest_info:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     schema: vsphere
