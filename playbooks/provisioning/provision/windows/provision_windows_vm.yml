@@ -11,4 +11,4 @@
   roles:
     - role: provisioning/vmware_provisioning
       tags: provision
-      when: not (dry_run | default(fa lse) | bool)
+      when: not (dry_run | default(false) | bool)

@@ -39,7 +39,7 @@
 # -------------------------------------------------------------------------------
 # Performs VM operational checks and configuration validation.
 # Typically executed after provisioning is complete.
-- import_playbook: provisioning/testing/log-vm-parameters.yml
+- import_playbook: provisioning/testing/check_vm_status.yml
   tags: [status, verification, post_provision]
 
 # -------------------------------------------------------------------------------
@@ -47,14 +47,14 @@
 # -------------------------------------------------------------------------------
 # Validates vCenter access, credentials, and API connectivity.
 # Ensures environment readiness before provisioning begins.
-- import_playbook: provisioning/testing/connection-parameters.yml
+- import_playbook: provisioning/testing/test_vcenter.yml
   tags: [validation, vcenter, connectivity]
 
 # -------------------------------------------------------------------------------
 # STEP 3: Linux VM Provisioning
 # -------------------------------------------------------------------------------
 # Creates and configures Linux virtual machines using templates or specs.
-- import_playbook: provisioning/provision/linux/provision_linux_vm.yml
+- import_playbook: provisioning/provision/linux/provision_vm.yml
   tags: [provision, linux]
 
 # -------------------------------------------------------------------------------
