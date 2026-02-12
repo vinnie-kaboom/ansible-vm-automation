@@ -27,7 +27,7 @@
   hosts: "{{ target_hosts | default('all') }}"   # cce3_gpc_linux
   any_errors_fatal: true
   gather_facts: true
-  connection: local
+  connection: ssh
   serial: "{{ vm_parallel_count | default(5) }}"
   become: yes
 

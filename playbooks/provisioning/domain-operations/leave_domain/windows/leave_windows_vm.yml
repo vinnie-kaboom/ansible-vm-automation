@@ -21,7 +21,7 @@
 # ==============================================================================
 
 - name: Leave Windows VM from Domain
-  hosts: "{{ ansible_host | default('cce3_gpc_windows') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   gather_facts: no
 
   tasks:

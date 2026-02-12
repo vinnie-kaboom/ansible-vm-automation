@@ -3,7 +3,7 @@
 # Uses changed_when: true to force task visibility in output
 
 - name: "🔍 pre-flight connection check"
-  hosts: "{{ ansible_host | default('all_servers') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   gather_facts: no
   vars:
     ansible_user: "{{ config_ssh_user }}"

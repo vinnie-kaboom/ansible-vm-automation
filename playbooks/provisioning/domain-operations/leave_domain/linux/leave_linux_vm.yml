@@ -3,7 +3,7 @@
 # Force Linux Domain Leave Playbook
 
 - name: Force Leave Linux VM from Domain
-  hosts: "{{ ansible_host | default('cce3_gpc_linux') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   become: yes
   gather_facts: yes
 

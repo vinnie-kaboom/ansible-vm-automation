@@ -2,7 +2,7 @@
 
 # Domain Validation Playbook
 - name: Domain Join Validation
-  hosts: "{{ ansible_host | default('all_servers') }}"
+  hosts: "{{ target_hosts | default('all') }}"
   gather_facts: yes
   vars:
     config_domain_name: "{{ domain_name }}"
