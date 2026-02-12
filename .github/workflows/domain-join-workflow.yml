@@ -12,9 +12,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
-  push:
-    branches: [main]
-
 jobs:
   # ---------------------------------------------------------------------------
   # PR: Preflight checks (SSH, Python, sudo — VM must already exist)
@@ -33,9 +30,7 @@ jobs:
   # ---------------------------------------------------------------------------
   join:
     name: Join Domain
-    if: >-
-      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+    if: ${{ github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success' }}
     uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
     secrets: inherit
     with:

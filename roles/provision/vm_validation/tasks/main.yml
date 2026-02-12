@@ -2,7 +2,7 @@
 - name: "Starting VM validation"
   debug:
     msg: "Validating {{ config_vm_name }}"
-  tags: always
+  tags: [validation, status]
 
 - name: "Initialize validation results"
   set_fact:
@@ -10,7 +10,7 @@
       config: "PENDING"
       resources: "PENDING"
       network: "PENDING"
-  tags: always
+  tags: [validation, status]
 
 - name: "Validate VM configuration"
   include_tasks: validate_config.yml

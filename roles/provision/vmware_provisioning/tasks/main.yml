@@ -6,7 +6,7 @@
   include_tasks: validate.yml
   tags:
     - validation
-    - always
+    - vm-operations
 
 - name: "Provision VM in vCenter"
   include_tasks: create_vm.yml
