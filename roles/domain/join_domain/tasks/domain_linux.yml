@@ -632,9 +632,9 @@
   tags: [domain_join]
   shell: |
     # Use adcli join with overwrite to recreate keytab without breaking existing join
-    echo '{{ admin_password }}' | adcli join {{ domain_name }} \
-      --login-user={{ admin_user.split('@')[0] }} \
-      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" \{% endif %}
+    echo '{{ admin_password }}' | adcli join '{{ domain_name }}' \
+      --login-user='{{ admin_user.split('@')[0] }}' \
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou='{{ ou_paths.linux }}' \{% endif %}
       --stdin-password \
       --verbose \
       2>&1 || true
