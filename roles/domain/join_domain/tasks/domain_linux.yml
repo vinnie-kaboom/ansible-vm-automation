@@ -3,9 +3,8 @@
 # Streamlined version with essential functionality and minimal debug output
 
 - name: Skip localhost - not a valid domain join target
-  when: inventory_hostname == 'localhost'
-  tags: [domain_join]
   meta: end_host
+  when: inventory_hostname == 'localhost'
 
 - name: Check current domain status
   tags: [domain_join]
@@ -563,10 +562,10 @@
   when: not was_already_joined
   tags: [domain_join]
   shell: |
-    echo '{{ admin_password }}' | adcli join {{ domain_name }} \
-      --user={{ admin_user.split('@')[0] }} \
-      --computer-name={{ sssd_computer_name }} \
-      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" \{% endif %}
+    echo '{{ admin_password }}' | adcli join '{{ domain_name }}' \
+      --user='{{ admin_user.split('@')[0] }}' \
+      --computer-name='{{ sssd_computer_name }}' \
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou='{{ ou_paths.linux }}' \{% endif %}
       --verbose \
       --stdin-password
   register: join_result_adcli
@@ -579,7 +578,7 @@
   when: not was_already_joined and (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc != 0)
   tags: [domain_join]
   shell: |
-    echo '{{ admin_password }}' | realm join {{ domain_name }} --user={{ admin_user.split('@')[0] }} {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou="{{ ou_paths.linux }}" {% endif %}--install=/ --verbose
+    echo '{{ admin_password }}' | realm join '{{ domain_name }}' --user='{{ admin_user.split('@')[0] }}' {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou='{{ ou_paths.linux }}' {% endif %}--install=/ --verbose
   register: join_result_realm
   failed_when: false
   no_log: false
