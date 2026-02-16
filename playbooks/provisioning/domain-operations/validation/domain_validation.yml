@@ -1,0 +1,18 @@
+---
+- name: "Validate Domain Join"
+  hosts: "{{ target_hosts | default('all') }}"
+  gather_facts: true
+  connection: ssh
+  become: yes
+
+  vars:
+    config_domain_name: "{{ domain_name }}"
+    config_domain_realm: "{{ domain_name | upper }}"
+    config_domain_ou_linux: "{{ linux_ou | default('') }}"
+    config_vm_name: "{{ vm_name | default(inventory_hostname) }}"
+
+  tasks:
+    - name: Run domain join validation
+      include_role:
+        name: domain/join_validation
+      tags: [domain_validation]

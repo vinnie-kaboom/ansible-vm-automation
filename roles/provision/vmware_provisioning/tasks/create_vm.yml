@@ -11,7 +11,6 @@
 # Query vCenter for VM existence and current state
 - name: "Check if VM already exists"
   community.vmware.vmware_guest_info:
-    hostname: "{{ vcenter_host }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   register: existing_vm_check
@@ -35,7 +34,6 @@
 # Runs async to avoid blocking on long operations
 - name: "Clone VM from template with inline customization"
   community.vmware.vmware_guest:
-    hostname: "{{ vcenter_host }}"
     name: "{{ config_vm_name }}"
     template: "{{ config_vm_template }}"
     datacenter: "{{ config_vcenter_datacenter }}"
@@ -85,10 +83,6 @@
 # Add creation metadata to VM notes field
 - name: "Update VM annotation"
   community.vmware.vmware_guest:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     annotation: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
@@ -175,7 +169,6 @@
 # Power on VM (idempotent - no-op if already powered on)
 - name: "Power on VM"
   community.vmware.vmware_guest_powerstate:
-    hostname: "{{ vcenter_host }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     state: powered-on

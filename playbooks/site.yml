@@ -10,14 +10,16 @@
 #   4. Provision Windows VMs (optional)
 #   5. Pre-flight connection check (VM must exist, before domain join)
 #   6. Domain join (VM must exist and be reachable)
-#   7. Error handling and cleanup
+#   7. Domain join validation (verify membership, SSSD, keytab, DNS)
+#   8. Error handling and cleanup
 #
 # TAG USAGE:
 #   --tags validation          Steps 1-2 (pre-provisioning checks, no VM needed)
 #   --tags vm-operations       Steps 3-4 (create VMs)
 #   --tags preflight           Step 5    (SSH/Python/sudo checks on live VM)
-#   --tags domain_join         Steps 5-6 (preflight + domain join)
-#   --tags cleanup             Step 7    (remove failed VMs)
+#   --tags domain_join         Steps 5-7 (preflight + domain join + validation)
+#   --tags domain_validation   Step 7    (validate domain join only)
+#   --tags cleanup             Step 8    (remove failed VMs)
 #
 # USAGE EXAMPLES:
 #   ansible-playbook playbooks/site.yml --tags validation
@@ -66,7 +68,14 @@
   tags: [domain_join, linux]
 
 # -------------------------------------------------------------------------------
-# STEP 7: Error Handling and Cleanup
+# STEP 7: Domain Join Validation (VM must be domain-joined)
+# -------------------------------------------------------------------------------
+# Validates domain membership, SSSD, keytab, DNS, and authentication.
+- import_playbook: provisioning/domain-operations/validation/domain_validation.yml
+  tags: [domain_join, domain_validation]
+
+# -------------------------------------------------------------------------------
+# STEP 8: Error Handling and Cleanup
 # -------------------------------------------------------------------------------
 - import_playbook: provisioning/error_handling/cleanup.yml
   tags: [cleanup, error_handling]

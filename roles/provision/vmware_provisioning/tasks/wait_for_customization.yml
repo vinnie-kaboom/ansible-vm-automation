@@ -2,10 +2,6 @@
 
 - name: "Wait for VMware Tools to become available"
   community.vmware.vmware_guest_tools_wait:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   when: not ansible_check_mode
@@ -17,10 +13,6 @@
 
 - name: "Wait for guest OS customization to complete"
   community.vmware.vmware_guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   register: vm_info
@@ -42,10 +34,6 @@
 
 - name: "Wait for VM to obtain correct IP address"
   community.vmware.vmware_guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   register: vm_info
@@ -78,10 +66,6 @@
 
 - name: "Retrieve customization log file from VM"
   community.vmware.vmware_guest_file_operation:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     vm_id: "{{ config_vm_name }}"
     vm_username: "{{ config_vm_root_user }}"
@@ -125,10 +109,6 @@
 
 - name: "Get detailed VM network information"
   community.vmware.vmware_guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     schema: vsphere

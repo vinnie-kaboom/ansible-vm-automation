@@ -32,10 +32,6 @@
 
 - name: "Query all VMs in vCenter to check for IP conflicts"
   community.vmware.vmware_vm_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     vm_type: vm
   when: config_vm_network_start_ip is defined
   delegate_to: localhost

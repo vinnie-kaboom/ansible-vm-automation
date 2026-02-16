@@ -4,10 +4,6 @@
 
 - name: "Get VM network details via VMware Tools (for diagnostics)"
   community.vmware.vmware_vm_shell:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     vm_id: "{{ config_vm_name }}"
     vm_username: "{{ config_vm_root_user | default('root') }}"

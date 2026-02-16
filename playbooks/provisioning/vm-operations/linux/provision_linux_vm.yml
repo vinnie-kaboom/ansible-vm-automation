@@ -9,6 +9,13 @@
   serial: "{{ vm_parallel_count | default(5) }}"
   tags: [provision, linux]
 
+  module_defaults:
+    group/vmware:
+      hostname: "{{ vcenter_host }}"
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
   # Executed before roles. Useful for logging, validation, or pre-checks.
   pre_tasks:
     - name: "Display provisioning method"
@@ -18,14 +25,14 @@
     # Creates a Linux VM from a specified vCenter template.
     # The 'vm_provisioning_method' variable tells the role to use
     # template-based provisioning rather than custom specs.
-    - role: provisioning/vmware_provisioning
+    - role: provision/vmware_provisioning
       tags: [provision]
       vars:
         vm_provisioning_method: template
 
     # After creation, this role checks that the VM exists, is powered on,
     # and matches expected configuration parameters (datacenter, cluster, etc.).
-    - role: provisioning/vm_validation
+    - role: provision/vm_validation
       tags: [validation]
       vars:
         vm_provisioning_method: template
