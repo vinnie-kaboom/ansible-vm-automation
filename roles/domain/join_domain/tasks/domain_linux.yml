@@ -301,6 +301,15 @@
   register: package_install_result
   ignore_errors: yes
 
+- name: Install packages individually if bulk install failed
+  when: not was_already_joined and package_install_result is defined and package_install_result is failed
+  tags: [domain_join]
+  package:
+    name: "{{ item }}"
+    state: present
+  loop: "{{ packages_to_install | default([]) }}"
+  ignore_errors: yes
+
 - name: Set package install result for already installed packages
   when: not was_already_joined and (packages_to_install is not defined or packages_to_install | length == 0)
   tags: [domain_join]
@@ -563,9 +572,9 @@
   tags: [domain_join]
   shell: |
     echo '{{ admin_password }}' | adcli join '{{ domain_name }}' \
-      --user='{{ admin_user.split('@')[0] }}' \
+      --login-user='{{ admin_user.split('@')[0] }}' \
       --computer-name='{{ sssd_computer_name }}' \
-      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou='{{ ou_paths.linux }}' \{% endif %}
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--domain-ou='{{ ou_paths.linux }}' \{% endif %}
       --verbose \
       --stdin-password
   register: join_result_adcli
@@ -584,13 +593,43 @@
   no_log: false
 
 # Set the successful join result
+- name: Check if domain join actually succeeded despite non-zero exit codes
+  when: >-
+    not was_already_joined and
+    (join_result_adcli is not defined or join_result_adcli.rc | default(1) != 0) and
+    (join_result_realm is not defined or join_result_realm.rc | default(1) != 0)
+  tags: [domain_join]
+  shell: |
+    # realm may return rc=1 if oddjobd fails even though the AD join succeeded
+    # Check if we're actually joined by looking for the domain in realm list
+    if realm list 2>/dev/null | grep -qi '{{ domain_name }}'; then
+      echo "Domain join confirmed via realm list"
+      exit 0
+    fi
+    # Also check if keytab was created (sign of successful adcli/realm join)
+    if [ -f /etc/krb5.keytab ] && klist -k /etc/krb5.keytab 2>/dev/null | grep -qi '{{ domain_name }}'; then
+      echo "Domain join confirmed via keytab"
+      exit 0
+    fi
+    echo "Domain join not confirmed"
+    exit 1
+  register: join_verify_fallback
+  failed_when: false
+
 - name: Set final join result
   when: not was_already_joined
   tags: [domain_join]
   set_fact:
     final_join_result: "{{ join_result_adcli if (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) else (join_result_realm if join_result_realm is defined else join_result_adcli) }}"
-    join_method: "{{ 'adcli' if (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) else ('realm' if (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0) else 'failed') }}"
-    join_successful: "{{ (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0) or (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0) }}"
+    join_method: >-
+      {{ 'adcli' if (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0)
+         else ('realm' if (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0)
+         else ('realm-partial' if (join_verify_fallback is defined and join_verify_fallback.rc is defined and join_verify_fallback.rc == 0)
+         else 'failed')) }}
+    join_successful: >-
+      {{ (join_result_adcli is defined and join_result_adcli.rc is defined and join_result_adcli.rc == 0)
+         or (join_result_realm is defined and join_result_realm.rc is defined and join_result_realm.rc == 0)
+         or (join_verify_fallback is defined and join_verify_fallback.rc is defined and join_verify_fallback.rc == 0) }}
 
 - name: Verify domain join success
   when: not was_already_joined
@@ -634,7 +673,7 @@
     # Use adcli join with overwrite to recreate keytab without breaking existing join
     echo '{{ admin_password }}' | adcli join '{{ domain_name }}' \
       --login-user='{{ admin_user.split('@')[0] }}' \
-      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--computer-ou='{{ ou_paths.linux }}' \{% endif %}
+      {% if ou_paths.linux is defined and ou_paths.linux | length > 0 %}--domain-ou='{{ ou_paths.linux }}' \{% endif %}
       --stdin-password \
       --verbose \
       2>&1 || true
@@ -781,6 +820,33 @@
     exit $?
   register: sssd_config_test
   failed_when: sssd_config_test.rc != 0
+
+- name: Configure authselect with SSSD
+  when: needs_sssd_config | default(not was_already_joined) and ansible_os_family == 'RedHat'
+  tags: [domain_join]
+  shell: |
+    # Enable SSSD via authselect (handles case where realm join failed at PAM step)
+    if command -v authselect >/dev/null 2>&1; then
+      # Use with-mkhomedir only if oddjob-mkhomedir is installed
+      if rpm -q oddjob-mkhomedir >/dev/null 2>&1; then
+        authselect select sssd with-mkhomedir --force 2>&1
+        systemctl enable --now oddjobd.service 2>/dev/null || true
+      else
+        authselect select sssd --force 2>&1
+      fi
+    elif command -v authconfig >/dev/null 2>&1; then
+      authconfig --enablesssd --enablesssdauth --enablemkhomedir --update 2>&1
+    fi
+  register: authselect_result
+  failed_when: false
+
+- name: Enable SSSD service
+  when: needs_sssd_config | default(not was_already_joined)
+  tags: [domain_join]
+  service:
+    name: sssd
+    enabled: yes
+  failed_when: false
 
 - name: Restart SSSD service to apply changes
   when: (needs_sssd_config | default(not was_already_joined) and (sssd_config_result is changed or sssd_permission_fix is changed)) or (was_already_joined and keytab_recreation is changed)
