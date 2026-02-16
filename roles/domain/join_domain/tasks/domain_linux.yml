@@ -829,9 +829,3 @@
       Packages: {{ linux_join_details.packages_installed }}
       SSSD: {{ linux_join_details.sssd_configured }}
 
-# Call join_validation role for comprehensive domain validation
-- name: Include join_validation role for comprehensive domain validation
-  include_role:
-    name: provisioning/join_validation
-  when: not was_already_joined and join_successful
-  tags: [domain_join, validation]

@@ -14,3 +14,9 @@
   # Primary: Check if kernel is Win32NT
   # Fallback: Check if OS family is Windows (in case kernel detection fails)
   when: ansible_system == 'Win32NT' or ansible_os_family == 'Windows'
+
+- name: Validate domain join
+  include_role:
+    name: domain/join_validation
+  when: linux_domain_join_success | default(false) or windows_domain_join_success | default(false)
+  tags: [domain_join, validation]
