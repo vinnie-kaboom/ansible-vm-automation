@@ -1,0 +1,50 @@
+---
+name: VM Provisioning Workflow
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  push:
+    branches: [main]
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # PR: Validate config and vCenter connectivity (no VM needed)
+  # ---------------------------------------------------------------------------
+  validation:
+    name: Validate Configuration
+    if: ${{ github.event_name == 'pull_request' }}
+    uses: operations-support/ansible-golden/.github/workflows/vm-operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'validation'
+      limit: 'all_servers'
+      check_mode: false
+
+  # ---------------------------------------------------------------------------
+  # Merge to main: Validate then provision VMs
+  # ---------------------------------------------------------------------------
+  provision:
+    name: Provision VMs
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    uses: operations-support/ansible-golden/.github/workflows/vm-operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'validation,vm-operations,status'
+      limit: 'all_servers'
+      check_mode: false
+
+  # ---------------------------------------------------------------------------
+  # After provisioning succeeds: Join VMs to domain
+  # ---------------------------------------------------------------------------
+  domain-join:
+    name: Join Domain
+    needs: provision
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'domain_join'
