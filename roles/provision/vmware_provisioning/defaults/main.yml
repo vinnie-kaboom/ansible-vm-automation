@@ -1,0 +1,49 @@
+---
+# VMware vm-operations role defaults
+# Technical defaults that work in most environments
+# Override in inventory if environment requires different values
+
+# Async execution for VM creation
+vm_async_timeout: 3600          # Max time for VM creation (seconds)
+vm_poll_interval: 0             # Poll immediately via async_status
+
+# Async job polling - CRITICAL: retries × delay >= vm_async_timeout
+config_vm_async_retries: 60     # Status check attempts (60 × 60 = 3600s)
+config_vm_async_delay: 60       # Seconds between status checks
+
+# VMware Tools wait settings (60 × 30 = 1800s total)
+config_vm_wait_for_tools_timeout: 1800
+config_vm_wait_for_guest_state_retries: 60
+config_vm_wait_for_guest_state_delay: 30
+config_vm_wait_for_ssh_timeout: 120
+config_vm_wait_for_ssh_delay: 10
+config_vm_post_boot_wait: 30
+
+# Error handling
+config_vm_max_retries: 3
+config_vm_retry_delay: 30
+
+# Validation
+config_vm_enable_validation: true
+config_vm_validation_enable_logging: true
+config_vm_validation_log_level: "INFO"
+config_vm_validation_log_path: "logs"
+config_vm_validation_log_format: "json"
+
+# System configuration
+config_vm_timezone: "UTC"
+config_vm_update_system: true
+config_vm_update_system_security: true
+config_vm_enable_services: true
+config_vm_start_services: true
+
+# Network adapter defaults
+config_vm_network_type: static              # Use static IP assignment
+config_vm_network_device_type: vmxnet3
+config_vm_network_start_connected: true     # Connect NIC at boot
+
+
+# Customization behavior
+config_vm_skip_customization_on_failure: false  # Continue even if customization fails
+config_vm_customization_timeout: 1800           # Max time to wait for customization (30 min)
+

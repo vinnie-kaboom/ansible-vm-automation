@@ -1,0 +1,19 @@
+---
+
+- name: "Check VM Configuration Status"
+  hosts: runner
+  any_errors_fatal: false
+  gather_facts: true
+  connection: local
+
+  module_defaults:
+    group/vmware:
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  roles:
+    - role: provision/vm_validation
+      vars:
+        validation_mode: "display"
+      tags: [validation, status, display]

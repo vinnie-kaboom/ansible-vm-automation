@@ -1,0 +1,17 @@
+---
+# ===================================================================================
+# Network: xxxxxxxxxxx11_greysystemsupport-hq — subnet and host‑level configuration
+# ===================================================================================
+
+# Network configuration
+config_vm_network: "xxxxxxxxxxx11-GreySystemSupport-xx.x.xxx.xx-26"
+
+# DNS and Gateway - UPDATE THESE WITH REAL VALUES
+config_vm_network_dns_servers: "xx.x.xxx.xx"
+config_vm_network_gateway: "xx.x.xxx.xx"
+config_vm_network_netmask: "255.255.255.0"
+
+# Per-host derived values - these use the ansible_host from inventory
+config_vm_name: "{{ inventory_hostname }}"
+config_vm_network_start_ip: "{{ ansible_host }}"
+config_vm_network_end_ip: "{{ ansible_host }}"

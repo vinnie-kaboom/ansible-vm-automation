@@ -1,0 +1,8 @@
+# Managed by Ansible - Domain Join Automation
+# DNS configuration for Active Directory domain {{ domain_name }}
+
+search {{ domain_name }}
+nameserver {{ dns_server }}
+{% if dns_server_secondary is defined and dns_server_secondary != '' %}
+nameserver {{ dns_server_secondary }}
+{% endif %}

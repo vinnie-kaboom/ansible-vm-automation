@@ -1,0 +1,16 @@
+---
+# Domain Join Role - Main Tasks
+
+- name: Include Linux domain join tasks
+  include_tasks: domain_linux.yml
+  # Run for any Linux system (RHEL, CentOS, Ubuntu, Debian, etc.)
+  # Primary: Check if kernel is Linux
+  # Fallback: Check if it's a known Linux family (in case kernel detection fails)
+  when: ansible_system == 'Linux' or ansible_os_family in ['RedHat', 'Debian', 'Suse', 'Archlinux', 'Alpine']
+
+- name: Include Windows domain join tasks
+  include_tasks: domain_windows.yml
+  # Run for any Windows system (Server 2016/2019/2022, Windows 10/11, etc.)
+  # Primary: Check if kernel is Win32NT
+  # Fallback: Check if OS family is Windows (in case kernel detection fails)
+  when: ansible_system == 'Win32NT' or ansible_os_family == 'Windows'

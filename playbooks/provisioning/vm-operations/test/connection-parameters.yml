@@ -1,0 +1,18 @@
+---
+- name: "vCenter Connectivity Test"
+  hosts: runner
+  any_errors_fatal: true
+  gather_facts: true
+  connection: local
+
+  module_defaults:
+    group/vmware:
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  roles:
+    - role: provision/vcenter_connection
+      tags:
+        - connectivity
+        - validation

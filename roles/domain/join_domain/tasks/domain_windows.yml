@@ -1,0 +1,343 @@
+---
+# Windows Domain Join Tasks
+# Query current domain membership status using WMI
+# Output: current_domain_status (stdout contains domain name or WORKGROUP)
+
+- name: Check current domain status
+  tags: [domain_join]
+  win_shell: "(Get-WmiObject -Class Win32_ComputerSystem).Domain"
+  register: current_domain_status
+  failed_when: false
+  changed_when: false
+
+# Determine if server is already joined to the target domain
+# Output: was_already_joined (boolean), original_domain_status (string)
+- name: Set initial domain status
+  tags: [domain_join]
+  set_fact:
+    was_already_joined: "{{ domain_name | lower in current_domain_status.stdout | lower if current_domain_status.stdout is defined else false }}"
+    original_domain_status: "{{ current_domain_status.stdout | default('WORKGROUP') | trim }}"
+
+# Display message if server already joined (skip remaining join tasks)
+- name: Skip if already joined to correct domain
+  tags: [domain_join]
+  debug:
+    msg: "Server {{ inventory_hostname }} is already joined to domain {{ domain_name }}"
+  when: was_already_joined
+
+# PREREQUISITE CHECKS - Validate environment before attempting domain join
+# Verify DNS can resolve domain name to IP addresses
+# Output: dns_check (rc=0 if successful)
+- name: Check DNS resolution for domain
+  tags: [domain_join]
+  win_shell: "Resolve-DnsName -Name {{ domain_name }} -Type A"
+  register: dns_check
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Verify DNS can resolve domain controller SRV records (critical for AD)
+# Output: dc_srv_check (rc=0 if SRV records found)
+- name: Check DNS resolution for domain controller SRV records
+  tags: [domain_join]
+  win_shell: "Resolve-DnsName -Name _ldap._tcp.{{ domain_name }} -Type SRV"
+  register: dc_srv_check
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Test network connectivity to domain controller on LDAP port (389)
+# Output: ldap_connectivity (rc=0 if port reachable)
+- name: Check network connectivity to domain
+  tags: [domain_join]
+  win_shell: "Test-NetConnection -ComputerName {{ domain_name }} -Port 389 -InformationLevel Quiet"
+  register: ldap_connectivity
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Test network connectivity to domain controller on Kerberos port (88)
+# Output: kerberos_connectivity (rc=0 if port reachable)
+- name: Check Kerberos connectivity
+  tags: [domain_join]
+  win_shell: "Test-NetConnection -ComputerName {{ domain_name }} -Port 88 -InformationLevel Quiet"
+  register: kerberos_connectivity
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Check Windows Time service status and synchronization
+# Critical: AD rejects authentication if time skew > 5 minutes
+# Output: time_sync_check (stdout contains time sync status)
+- name: Check system time synchronization
+  tags: [domain_join]
+  win_shell: "w32tm /query /status"
+  register: time_sync_check
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Force system time synchronization with domain controller
+# Output: time_resync (rc=0 if successful)
+- name: Synchronize system time with domain
+  tags: [domain_join]
+  win_shell: "w32tm /resync /force"
+  register: time_resync
+  failed_when: false
+  when: not was_already_joined
+
+# Check if RSAT-AD-PowerShell feature is installed (required for AD cmdlets)
+# Output: rsat_check (stdout contains installation status)
+- name: Check Windows features requirements
+  tags: [domain_join]
+  win_shell: "Get-WindowsFeature -Name RSAT-AD-PowerShell"
+  register: rsat_check
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined
+
+# Install RSAT-AD-PowerShell feature if not present
+# Provides Get-ADDomain and other AD PowerShell cmdlets
+# Output: rsat_install_result (success if installed)
+- name: Install RSAT-AD-PowerShell if missing
+  tags: [domain_join]
+  win_feature:
+    name: RSAT-AD-PowerShell
+    state: present
+  register: rsat_install_result
+  when: not was_already_joined and (rsat_check.rc != 0 or 'Installed' not in rsat_check.stdout)
+
+# Validate RSAT-AD-PowerShell is available before proceeding
+# Fails playbook if feature installation failed
+- name: Verify RSAT installation
+  tags: [domain_join]
+  assert:
+    that:
+      - rsat_install_result is success or rsat_install_result is skipped or 'Installed' in rsat_check.stdout
+    fail_msg: "Failed to install RSAT-AD-PowerShell feature"
+    success_msg: "RSAT-AD-PowerShell feature available"
+  when: not was_already_joined
+
+# Test domain admin credentials by querying AD domain
+# Validates credentials before attempting domain join
+# Output: domain_auth_test (rc=0 if authentication successful)
+- name: Test domain authentication credentials
+  tags: [domain_join]
+  win_shell: |
+    $SecurePassword = ConvertTo-SecureString "{{ admin_password }}" -AsPlainText -Force
+    $Credential = New-Object System.Management.Automation.PSCredential("{{ admin_user }}", $SecurePassword)
+    try {
+        $Domain = Get-ADDomain -Server {{ domain_name }} -Credential $Credential
+        Write-Host "SUCCESS: Domain authentication verified"
+        Write-Host "Domain: $($Domain.Name)"
+    } catch {
+        Write-Host "FAILED: $($_.Exception.Message)"
+        exit 1
+    }
+  register: domain_auth_test
+  failed_when: false
+  when: not was_already_joined
+  no_log: false
+
+# DOMAIN JOIN OPERATIONS - Execute domain join using available methods
+# Primary domain join method using win_domain_membership module
+# Places computer in specified OU if provided, otherwise uses default Computers container
+# Output: join_result_ansible (success/failed status and reboot requirement)
+- name: Join domain using win_domain_membership
+  tags: [domain_join]
+  win_domain_membership:
+    dns_domain_name: "{{ domain_name }}"
+    domain_admin_user: "{{ admin_user }}"
+    domain_admin_password: "{{ admin_password }}"
+    domain_ou_path: "{{ ou_paths.windows if ou_paths.windows and ou_paths.windows != '' else omit }}"
+    state: domain
+  register: join_result_ansible
+  failed_when: false
+  when: not was_already_joined
+
+# Fallback method using native PowerShell Add-Computer cmdlet
+# Executed only if win_domain_membership fails
+# Output: join_result_powershell (rc=0 if successful)
+- name: Join domain using PowerShell (Fallback)
+  tags: [domain_join]
+  win_shell: |
+    $SecurePassword = ConvertTo-SecureString "{{ admin_password }}" -AsPlainText -Force
+    $Credential = New-Object System.Management.Automation.PSCredential("{{ admin_user }}", $SecurePassword)
+    {% if ou_paths.windows and ou_paths.windows != '' %}
+    Add-Computer -DomainName "{{ domain_name }}" -Credential $Credential -OUPath "{{ ou_paths.windows }}" -Force -Verbose
+    {% else %}
+    Add-Computer -DomainName "{{ domain_name }}" -Credential $Credential -Force -Verbose
+    {% endif %}
+  register: join_result_powershell
+  failed_when: false
+  when: not was_already_joined and (join_result_ansible.failed | default(false) or not join_result_ansible is success)
+
+# Determine which join method succeeded and set unified result variables
+# Output: final_join_result (consolidated result), join_method (which method worked),
+#         join_successful (boolean), reboot_required (boolean)
+- name: Set final join result
+  tags: [domain_join]
+  set_fact:
+    final_join_result: "{{ join_result_ansible if (join_result_ansible is success and not join_result_ansible.failed | default(false)) else (join_result_powershell if join_result_powershell is defined else join_result_ansible) }}"
+    join_method: "{{ 'ansible_module' if (join_result_ansible is success and not join_result_ansible.failed | default(false)) else ('powershell' if (join_result_powershell is defined and join_result_powershell.rc is defined and join_result_powershell.rc == 0) else 'failed') }}"
+    join_successful: "{{ (join_result_ansible is success and not join_result_ansible.failed | default(false)) or (join_result_powershell is defined and join_result_powershell.rc is defined and join_result_powershell.rc == 0) }}"
+    reboot_required: "{{ join_result_ansible.reboot_required | default(false) or (join_result_powershell is defined and join_result_powershell.rc is defined and join_result_powershell.rc == 0) }}"
+  when: not was_already_joined
+
+# POST-JOIN VERIFICATION - Validate domain join was successful
+# Assert that join operation completed successfully
+# Provides troubleshooting guidance if join failed
+- name: Verify domain join success
+  tags: [domain_join]
+  assert:
+    that:
+      - join_successful | default(false)
+    fail_msg: |
+      Failed to join domain {{ domain_name }} using both methods.
+      Common troubleshooting steps:
+      1. Verify DNS resolution: Resolve-DnsName {{ domain_name }}
+      2. Check network connectivity: Test-NetConnection {{ domain_name }} -Port 389
+      3. Verify domain admin credentials
+      4. Check if computer account already exists in AD
+      5. Verify OU path: {{ ou_paths.windows | default('Using default Computers container') }}
+      6. Check system time synchronization with domain controller
+      7. Ensure domain admin has rights to join computers to domain
+    success_msg: "Successfully joined domain {{ domain_name }} using {{ join_method }}"
+  when: not was_already_joined
+
+# Query WMI to confirm computer is reporting correct domain membership
+# Output: post_join_domain_status (stdout contains current domain name)
+- name: Verify domain membership after join
+  tags: [domain_join]
+  win_shell: "(Get-WmiObject -Class Win32_ComputerSystem).Domain"
+  register: post_join_domain_status
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined and join_successful | default(false)
+
+# Assert that WMI reports correct domain name after join
+# Catches scenarios where join reported success but membership is incorrect
+- name: Validate domain membership
+  tags: [domain_join]
+  assert:
+    that:
+      - post_join_domain_status.stdout is defined
+      - domain_name | lower in post_join_domain_status.stdout | lower
+    fail_msg: |
+      Domain join appeared successful but membership verification failed.
+      Expected domain: {{ domain_name }}
+      Current domain: {{ post_join_domain_status.stdout | default('N/A') | trim }}
+    success_msg: "Domain membership verified successfully"
+  when: not was_already_joined and join_successful | default(false)
+
+# Verify computer can authenticate to domain using Get-ADDomain cmdlet
+# Tests that domain services are accessible from the joined computer
+# Output: post_join_auth_test (rc=0 if authentication successful)
+- name: Test domain authentication after join
+  tags: [domain_join]
+  win_shell: |
+    try {
+        $Domain = Get-ADDomain -Server {{ domain_name }}
+        Write-Host "SUCCESS: Post-join domain authentication verified"
+        Write-Host "Domain: $($Domain.Name)"
+    } catch {
+        Write-Host "WARNING: $($_.Exception.Message)"
+        exit 1
+    }
+  register: post_join_auth_test
+  failed_when: false
+  when: not was_already_joined and join_successful | default(false)
+
+# For servers already in domain, set success flags without performing join
+# Output: join_successful, join_method, reboot_required (all set to appropriate defaults)
+- name: Set default values for already joined servers
+  tags: [domain_join]
+  set_fact:
+    join_successful: true
+    join_method: "already_joined"
+    reboot_required: false
+  when: was_already_joined
+
+# Consolidate all join results into comprehensive status variables
+# Output: windows_domain_join_success (overall success boolean),
+#         windows_join_details (detailed dictionary with all test results)
+- name: Set success status for Windows domain join
+  tags: [domain_join]
+  set_fact:
+    windows_domain_join_success: "{{ was_already_joined or (join_successful | default(false)) }}"
+    windows_join_details:
+      domain: "{{ domain_name }}"
+      method: "{{ 'already_joined' if was_already_joined else (join_method | default('failed')) }}"
+      admin_user: "{{ admin_user }}"
+      ou_path: "{{ ou_paths.windows | default('Default Computers container') }}"
+      rsat_installed: "{{ 'SUCCESS' if rsat_install_result is defined and (rsat_install_result is success or rsat_install_result is skipped) else 'N/A' }}"
+      dns_resolution: "{{ 'SUCCESS' if dns_check is defined and dns_check.rc is defined and dns_check.rc == 0 else ('N/A' if was_already_joined else 'FAILED') }}"
+      network_connectivity: "{{ 'SUCCESS' if ldap_connectivity is defined and ldap_connectivity.rc is defined and ldap_connectivity.rc == 0 else ('N/A' if was_already_joined else 'FAILED') }}"
+      kerberos_connectivity: "{{ 'SUCCESS' if kerberos_connectivity is defined and kerberos_connectivity.rc is defined and kerberos_connectivity.rc == 0 else ('N/A' if was_already_joined else 'FAILED') }}"
+      domain_auth_test: "{{ 'SUCCESS' if domain_auth_test is defined and domain_auth_test.rc is defined and domain_auth_test.rc == 0 else ('N/A' if was_already_joined else 'FAILED') }}"
+      post_join_auth_test: "{{ 'SUCCESS' if post_join_auth_test is defined and post_join_auth_test.rc is defined and post_join_auth_test.rc == 0 else 'N/A' }}"
+      reboot_required: "{{ reboot_required | default(false) }}"
+
+# Display comprehensive summary of domain join operation
+# Shows all test results and final status for troubleshooting
+- name: Display join summary
+  tags: [domain_join]
+  debug:
+    msg: |
+      Windows Domain Join {{ 'SUCCESS' if windows_domain_join_success else 'FAILED' }} for {{ inventory_hostname }}
+      Domain: {{ domain_name }}
+      Method: {{ windows_join_details.method }}
+      Status: {{ 'ALREADY JOINED' if was_already_joined else ('SUCCESSFULLY JOINED' if windows_domain_join_success else 'FAILED TO JOIN') }}
+      DNS Resolution: {{ windows_join_details.dns_resolution }}
+      LDAP Connectivity: {{ windows_join_details.network_connectivity }}
+      Kerberos Connectivity: {{ windows_join_details.kerberos_connectivity }}
+      Domain Auth Test: {{ windows_join_details.domain_auth_test }}
+      Post-Join Auth: {{ windows_join_details.post_join_auth_test }}
+      RSAT Feature: {{ windows_join_details.rsat_installed }}
+      OU Path: {{ windows_join_details.ou_path }}
+      Reboot Required: {{ 'Yes' if windows_join_details.reboot_required else 'No' }}
+
+# REBOOT OPERATIONS - Complete domain join by rebooting system
+# Reboot server to finalize domain join configuration
+# Domain membership requires reboot to fully activate
+# Output: reboot_result (completion status)
+- name: Reboot if required
+  tags: [domain_join]
+  win_reboot:
+    reboot_timeout: 600
+    test_command: "whoami"
+  when: not was_already_joined and reboot_required | default(false)
+  register: reboot_result
+
+# Wait for server to come back online after reboot
+# Ensures connection is re-established before continuing
+- name: Verify reboot completion
+  tags: [domain_join]
+  wait_for_connection:
+    timeout: 600
+  when: not was_already_joined and reboot_required | default(false)
+
+# Query domain membership after reboot to confirm join persisted
+# Output: final_domain_verification (stdout contains domain name after reboot)
+- name: Final domain verification after reboot
+  tags: [domain_join]
+  win_shell: "(Get-WmiObject -Class Win32_ComputerSystem).Domain"
+  register: final_domain_verification
+  failed_when: false
+  changed_when: false
+  when: not was_already_joined and reboot_required | default(false)
+
+# Final assertion to ensure domain membership survived reboot
+# Critical verification that domain join is persistent
+- name: Validate final domain status
+  tags: [domain_join]
+  assert:
+    that:
+      - final_domain_verification.stdout is defined
+      - domain_name | lower in final_domain_verification.stdout | lower
+    fail_msg: |
+      Final domain verification failed after reboot.
+      Expected: {{ domain_name }}
+      Current: {{ final_domain_verification.stdout | default('N/A') | trim }}
+    success_msg: "Final domain verification successful after reboot"
+  when: not was_already_joined and reboot_required | default(false)

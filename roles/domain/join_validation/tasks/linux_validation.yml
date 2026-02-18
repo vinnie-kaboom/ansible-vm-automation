@@ -1,0 +1,162 @@
+---
+# Linux Domain Validation Tasks
+
+- name: Linux Domain Validation Tasks
+  block:
+    # STEP 1: Domain membership verification
+    # Checks if server is joined to the correct AD domain using multiple detection methods:
+    # - realm list (standard realm-managed joins)
+    # - adcli info (adcli-based joins)
+    # - getent passwd (domain user enumeration)
+    # - @ symbol check (fallback for systems with domain users)
+    # Output: Shell output containing "DOMAIN_FOUND=true" or "DOMAIN_FOUND=false"
+    - name: Check current domain membership
+      shell: |
+        echo "=== Domain Membership Check ==="
+        
+        # Method 1: Check if domain name appears in realm output
+        if realm list 2>/dev/null | grep -qi "{{ config_domain_name | default('unknown') }}"; then
+          echo "✅ Domain found in realm list"
+          echo "DOMAIN_FOUND=true"
+        # Method 2: Check via adcli info (works with adcli join)
+        elif adcli info {{ config_domain_name | default('unknown') }} 2>/dev/null; then
+          echo "✅ Domain info available via adcli"
+          echo "DOMAIN_FOUND=true"
+        # Method 3: Check for domain users in passwd (universal check)
+        elif getent passwd | grep -qi "{{ config_domain_name | default('unknown') }}"; then
+          echo "✅ Domain users found in passwd"
+          echo "DOMAIN_FOUND=true"
+        # Method 4: Check for domain users with @ symbol (alternative)
+        elif getent passwd | grep -q '@'; then
+          echo "✅ Domain users with @ symbol found"
+          echo "DOMAIN_FOUND=true"
+        else
+          echo "❌ Domain not found via any method"
+          echo "DOMAIN_FOUND=false"
+        fi
+        
+        echo "=== End Check ==="
+      register: realm_status_check
+      failed_when: false
+
+    # STEP 2: Parse domain membership results
+    # Convert shell output to Ansible facts for conditional logic
+    # Output: Sets facts is_joined_to_correct_domain (true/false) and current_domain (domain name or "NOT_JOINED")
+    - name: Check if joined to correct domain
+      set_fact:
+        is_joined_to_correct_domain: "{{ 'DOMAIN_FOUND=true' in realm_status_check.stdout }}"
+        current_domain: "{{ config_domain_name if ('DOMAIN_FOUND=true' in realm_status_check.stdout) else 'NOT_JOINED' }}"
+
+    # STEP 3: Assert domain membership
+    # Critical checkpoint - fails if server is not joined to correct domain
+    # Output: Success message "Server is joined to correct domain: [domain]" or fails playbook with error
+    - name: Verify domain membership
+      assert:
+        that:
+          - is_joined_to_correct_domain == true
+        fail_msg: "Server is not joined to correct domain. Current: {{ current_domain }}, Expected: {{ config_domain_name }}"
+        success_msg: "Server is joined to correct domain: {{ config_domain_name }}"
+
+    # STEP 4: Validate SSSD and authentication services
+    # Checks SSSD service, keytab, config files, database, and optional user auth test
+    - name: Test domain services and authentication
+      block:
+        # Output: Returns "active" if SSSD is running, exit code 0 for success
+        - name: Check SSSD service status
+          command: systemctl is-active sssd
+          register: sssd_service_check
+          failed_when: false
+
+        # Output: stat.exists=true if keytab file is present at /etc/krb5.keytab
+        - name: Verify Kerberos keytab exists
+          stat:
+            path: /etc/krb5.keytab
+          register: keytab_check
+
+        # Output: stat.exists=true if SSSD config file is present at /etc/sssd/sssd.conf
+        - name: Verify SSSD configuration exists
+          stat:
+            path: /etc/sssd/sssd.conf
+          register: sssd_config_check
+
+        # Output: stat.exists=true if SSSD database is initialized at /var/lib/sss/db/config.ldb
+        - name: Check SSSD database initialization
+          stat:
+            path: /var/lib/sss/db/config.ldb
+          register: sssd_db_check
+
+        # Output: Success message "SSSD is fully configured and running" or detailed failure breakdown
+        - name: Validate SSSD complete setup
+          assert:
+            that:
+              - keytab_check.stat.exists
+              - sssd_config_check.stat.exists
+              - sssd_db_check.stat.exists
+              - sssd_service_check.rc == 0
+            fail_msg: |
+              SSSD validation failed:
+              - Keytab exists: {{ keytab_check.stat.exists }}
+              - SSSD config exists: {{ sssd_config_check.stat.exists }}
+              - SSSD database initialized: {{ sssd_db_check.stat.exists }}
+              - SSSD service running: {{ sssd_service_check.rc == 0 }}
+            success_msg: "SSSD is fully configured and running"
+          failed_when: false
+
+        # Output: User info (uid, gid, groups) if domain user can be resolved, exit code 0 for success
+        - name: Test specific domain user if configured
+          shell: "id {{ domain_admin_user }}"
+          register: auth_test_result
+          failed_when: false
+          when: domain_admin_user is defined and domain_admin_user != ""
+
+    # STEP 5: Test DNS resolution
+    # Validates domain can be resolved via DNS (critical for AD communication)
+    # Output: nslookup results showing IP address(es) of domain controllers, exit code 0 for success
+    - name: Test DNS resolution
+      shell: "nslookup {{ config_domain_name }}"
+      register: dns_check
+      failed_when: false
+
+    # Assert DNS resolution was successful
+    # Output: Success message if DNS resolves, failure message if it doesn't
+    - name: Verify DNS resolution
+      assert:
+        that:
+          - dns_check.rc == 0
+        fail_msg: "DNS resolution failed for domain {{ config_domain_name }}. Check DNS configuration."
+        success_msg: "DNS resolution successful for domain {{ config_domain_name }}"
+
+    # STEP 6: Verify SSSD installation
+    # Confirms SSSD package is installed and executable
+    # Output: SSSD version string (e.g., "sssd 1.16.5"), exit code 0 for success
+    - name: Check SSSD configuration
+      shell: "sssd --version"
+      register: sssd_version_check
+      failed_when: false
+
+    # Output: Success message with SSSD version or failure message if not installed
+    - name: Verify SSSD installation
+      assert:
+        that:
+          - sssd_version_check.rc == 0
+        fail_msg: "SSSD is not properly installed or configured"
+        success_msg: "SSSD version: {{ sssd_version_check.stdout | trim }}"
+
+    # STEP 7: Set validation success status
+    # Creates comprehensive validation report as Ansible facts for reporting/monitoring
+    # Output: Sets linux_validation_success=true and linux_validation_details with domain info, service status, and test results
+    - name: Set Linux validation success status
+      set_fact:
+        linux_validation_success: true
+        linux_validation_details:
+          domain: "{{ config_domain_name }}"
+          membership: "{{ is_joined_to_correct_domain }}"
+          sssd_service: "{{ 'RUNNING' if sssd_service_check.rc == 0 else 'NOT RUNNING' }}"
+          authentication: "{{ auth_test_result.rc == 0 if auth_test_result is defined else 'SKIPPED' }}"
+          dns_resolution: "{{ dns_check.rc == 0 }}"
+          sssd_version: "{{ sssd_version_check.stdout | trim }}"
+          join_method: "{{ join_method | default('unknown') }}"
+          computer_account: "{{ config_vm_name | upper }}"
+          ou_path: "{{ config_domain_ou_linux | default('default') }}"
+
+  tags: validation

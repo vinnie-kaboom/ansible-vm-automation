@@ -1,0 +1,65 @@
+---
+# Network Validation Tasks
+# Tests network connectivity and validates IP configuration
+
+- name: "Get VM network details via VMware Tools (for diagnostics)"
+  community.vmware.vmware_vm_shell:
+    hostname: "{{ vcenter_host }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    vm_id: "{{ config_vm_name }}"
+    vm_username: "{{ config_vm_root_user | default('root') }}"
+    vm_password: "{{ config_vm_root_password }}"
+    vm_shell: "/bin/bash"
+    vm_shell_args: "-c 'echo \"=== Network Interfaces ===\"; ip addr show; echo \"=== Routes ===\"; ip route show; echo \"=== DNS ===\"; cat /etc/resolv.conf 2>/dev/null || echo \"No resolv.conf\"; echo \"=== Ping Gateway ===\"; ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo \"Cannot ping gateway\"'"
+    wait_for_process: true
+    timeout: 30
+  when:
+    - not ansible_check_mode
+    - config_vm_root_password is defined
+    - config_vm_root_password | length > 0
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  register: vm_network_diagnostics
+
+- name: "Display VM internal network diagnostics"
+  ansible.builtin.debug:
+    msg: "{{ vm_network_diagnostics.stdout_lines | default(['Diagnostics failed - check VM credentials']) }}"
+  when:
+    - not ansible_check_mode
+    - vm_network_diagnostics is defined
+
+- name: "Set ip_check for compatibility"
+  ansible.builtin.set_fact:
+    ip_check:
+      failed: "{{ not (vm_has_correct_ip | default(false)) }}"
+      succeeded: "{{ vm_has_correct_ip | default(false) }}"
+  when: not ansible_check_mode
+
+- name: "Test network connectivity to VM (ICMP ping)"
+  ansible.builtin.command:
+    cmd: "ping -c 3 -W 2 {{ config_vm_network_start_ip }}"
+  when: not ansible_check_mode
+  delegate_to: localhost
+  connection: local
+  ignore_errors: true
+  register: ping_result
+  changed_when: false
+
+- name: "Set VM pingable status"
+  ansible.builtin.set_fact:
+    vm_is_pingable: "{{ ping_result.rc == 0 }}"
+    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['Network connectivity failed - VM not reachable via ping'] if ping_result.rc != 0 else []) }}"
+  when: not ansible_check_mode
+
+- name: "Display ping result"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "Network Connectivity Test"
+      - "========================================="
+      - "Target: {{ config_vm_network_start_ip }}"
+      - "Result: {{ '✅ SUCCESS - VM is reachable' if ping_result.rc == 0 else '❌ FAILED - VM is NOT reachable' }}"
+      - "{{ 'SSH check will proceed' if ping_result.rc == 0 else 'SSH check will be SKIPPED (no network connectivity)' }}"
+      - "========================================="
+  when: not ansible_check_mode

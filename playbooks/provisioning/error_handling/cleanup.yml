@@ -1,17 +1,49 @@
 ---
+# ===================================================================================
+# PLAYBOOK: Error Handling and Cleanup
+# ===================================================================================
+# PURPOSE:
+#   This playbook performs cleanup actions when a vm-operations or validation
+#   workflow fails. It checks the VM state in vCenter, powers off the VM if needed,
+#   and removes it from inventory to ensure the environment remains clean.
+# ===================================================================================
+
 - name: "Error Handling and Cleanup"
-  hosts: "{{ target_hosts | default('all') }}"
+  hosts: "{{ ansible_host | default('all') }}:!runner"
   any_errors_fatal: true
   gather_facts: false
   connection: local
 
-  vars:
+  # -------------------------------------------------------------------------------
+  # MODULE DEFAULTS
+  # -------------------------------------------------------------------------------
+  # Define default connection parameters for all VMware modules in this play.
+  # These values are inherited from inventory or workflow configuration.
+  module_defaults:
+    group/vmware:
+      hostname: "{{ vcenter_host }}"
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  # -------------------------------------------------------------------------------
+  # VARIABLES
+  # -------------------------------------------------------------------------------
+  # All required variables (config_*, vcenter_*) are inherited from inventory or
+  # workflow context. Avoid redefining them here to prevent circular references.
+  vars: {}
   # All variables (config_*, vcenter_*) are inherited from inventory
   # No need to redefine them here to avoid circular references
 
+  # -------------------------------------------------------------------------------
+  # TASKS
+  # -------------------------------------------------------------------------------
   tasks:
     - name: "Check if cleanup is needed"
       block:
+        # ------------------------------------------------------------
+        # STEP 1: Retrieve VM power state
+        # ------------------------------------------------------------
         - name: "Get VM power state"
           community.vmware.vmware_guest_info:
             hostname: "{{ vcenter_host }}"
@@ -23,6 +55,11 @@
           register: vm_power_info
           ignore_errors: true
 
+        # ------------------------------------------------------------
+        # STEP 2: Power off VM if it’s currently running
+        # ------------------------------------------------------------
+        # Ensures the VM is shut down before deletion. This prevents
+        # potential vCenter API errors when attempting to remove active VMs.
         - name: "Power off VM if running"
           community.vmware.vmware_guest_powerstate:
             hostname: "{{ vcenter_host }}"
@@ -34,6 +71,11 @@
           when: vm_power_info.failed == false
           ignore_errors: true
 
+        # ------------------------------------------------------------
+        # STEP 3: Remove VM from vCenter
+        # ------------------------------------------------------------
+        # Deletes the specified VM from inventory and storage.
+        # Executed only if the VM power state check succeeded.
         - name: "Remove VM"
           community.vmware.vmware_guest:
             hostname: "{{ vcenter_host }}"
@@ -46,4 +88,9 @@
           when: vm_power_info.failed == false
           ignore_errors: true
 
+      # ------------------------------------------------------------
+      # CONDITIONAL EXECUTION
+      # ------------------------------------------------------------
+      # The entire cleanup block runs only when the variable
+      # `cleanup_on_failure` is set to true (boolean).
       when: cleanup_on_failure | bool

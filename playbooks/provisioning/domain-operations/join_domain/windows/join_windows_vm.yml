@@ -1,0 +1,16 @@
+---
+# Joins Windows VMs to Active Directory domain using native Windows methods
+
+- name: Join Windows VM to Domain
+  hosts: "{{ ansible_host | default('all') }}:!runner"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: winrm
+
+  tasks:
+    - name: Execute Windows domain join workflow
+      include_role:
+        name: domain/join_domain
+        tasks_from: windows
+      tags: [domain_join, windows]
+

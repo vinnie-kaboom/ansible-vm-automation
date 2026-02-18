@@ -1,0 +1,21 @@
+---
+
+- name: "Windows VM Provisioning"
+  hosts: "{{ ansible_host | default('all') }}:!runner"
+  any_errors_fatal: true
+  gather_facts: false
+  connection: local
+
+  module_defaults:
+    group/vmware:
+      username: "{{ vcenter_user }}"
+      password: "{{ vcenter_user_password }}"
+      validate_certs: "{{ vcenter_validate_certs }}"
+
+  vars:
+    config_guest_os_type: windows
+
+  roles:
+    - role: provision/vmware_provisioning
+      tags: vm-operations
+      when: not (dry_run | default(false) | bool)

@@ -1,0 +1,30 @@
+---
+- name: "Starting VM validation"
+  debug:
+    msg: "Validating {{ config_vm_name }}"
+  tags: [validation, status]
+
+- name: "Initialize validation results"
+  set_fact:
+    validation_results:
+      config: "PENDING"
+      resources: "PENDING"
+      network: "PENDING"
+  tags: [validation, status]
+
+- name: "Validate VM configuration"
+  include_tasks: validate_config.yml
+  tags: validation
+
+- name: "Validate VM resources"
+  include_tasks: validate_resources.yml
+  tags: validation
+
+#- name: "Validate network configuration"
+#  include_tasks: validate_network.yml
+#  tags: validation
+
+
+- name: "Generate validation report"
+  include_tasks: generate_report.yml
+  tags: validation

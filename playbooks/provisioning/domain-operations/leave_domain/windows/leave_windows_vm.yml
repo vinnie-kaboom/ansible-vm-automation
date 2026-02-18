@@ -1,0 +1,34 @@
+---
+
+# Windows Domain Leave Playbook
+- name: Leave Windows VM from Domain
+  hosts: "{{ ansible_host | default('all') }}:!runner"
+  gather_facts: no
+
+  tasks:
+    - name: Check if machine is domain joined
+      tags: [domain_leave]
+      win_shell: (Get-WmiObject -Class Win32_ComputerSystem).PartOfDomain
+      register: domain_status
+
+    - name: Leave domain
+      tags: [domain_leave]
+      win_domain_membership:
+        dns_domain_name: "{{ domain_name }}"
+        domain_admin_user: "{{ domain_admin_user }}"
+        domain_admin_password: "{{ domain_admin_password }}"
+        state: workgroup
+        workgroup_name: WORKGROUP
+      register: leave_result
+      when: domain_status.stdout | trim == "True"
+
+    - name: Reboot after domain leave
+      tags: [domain_leave]
+      win_reboot:
+        reboot_timeout: 600
+      when: leave_result.reboot_required | default(false)
+
+    - name: Display leave result
+      tags: [domain_leave]
+      debug:
+        msg: "Domain leave completed. Reboot required: {{ leave_result.reboot_required | default(false) }}"

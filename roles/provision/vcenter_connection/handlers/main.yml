@@ -1,0 +1,47 @@
+---
+- name: vcenter_api_success
+  debug:
+    msg: >
+      ✅ vCenter API version {{ vcenter_info.about_info.api_version }} meets minimum requirements.
+
+- name: vcenter_api_failure
+  debug:
+    msg: >
+      ❌ vCenter API version {{ vcenter_info.about_info.api_version | default('unknown') }}
+      is below the minimum required version.
+
+- name: vcenter_datacenter_success
+  debug:
+    msg: >
+      ✅ Datacenter "{{ config_vcenter_datacenter }}" access verified successfully.
+      Details: {{ datacenter_access }}
+
+- name: vcenter_datacenter_failure
+  debug:
+    msg: >
+      ❌ Failed to verify datacenter "{{ config_vcenter_datacenter }}" access.
+      Error: {{ datacenter_access.msg | default('No message returned') }}
+
+- name: vcenter_cluster_success
+  debug:
+    msg: >
+      ✅ Cluster "{{ config_vcenter_cluster }}" access verified successfully.
+      Details: {{ cluster_access }}
+
+- name: vcenter_cluster_failure
+  debug:
+    msg: >
+      ❌ Failed to verify cluster "{{ config_vcenter_cluster }}" access.
+      Error: {{ cluster_access.msg | default('No message returned') }}
+
+- name: vcenter_datastore_success
+  debug:
+    msg: >
+      ✅ Datastore "{{ config_vcenter_datastore }}" access verified successfully.
+      Details: {{ datastore_access }}
+
+- name: vcenter_datastore_failure
+  debug:
+    msg: >
+      ❌ Failed to verify datastore "{{ config_vcenter_datastore }}" access.
+      Error: {{ datastore_access.msg | default('No message returned') }}
