@@ -20,19 +20,37 @@
   ignore_errors: true
   when: not ansible_check_mode
 
+# Determine whether the VM already exists in vCenter
+- name: "Set VM existence flag"
+  ansible.builtin.set_fact:
+    vm_already_exists: "{{ (existing_vm_check.instance is defined) and (existing_vm_check is not failed) }}"
+  when:
+    - not ansible_check_mode
+    - existing_vm_check is defined
+
 # Display VM existence and power state for visibility
 - name: "Display existing VM status"
   ansible.builtin.debug:
     msg:
       - "VM {{ config_vm_name }} existence check:"
-      - "Exists: {{ existing_vm_check.instance is defined }}"
+      - "Exists: {{ vm_already_exists | default(false) }}"
       - "Power State: {{ existing_vm_check.instance.hw_power_status | default('N/A') }}"
   when:
     - not ansible_check_mode
     - existing_vm_check is defined
 
+- name: "Skip provisioning for existing VM"
+  ansible.builtin.debug:
+    msg: "VM {{ config_vm_name }} already exists ({{ existing_vm_check.instance.hw_power_status | default('unknown') }}). Skipping clone to avoid reconfiguration errors on distributed vSwitch."
+  when:
+    - not ansible_check_mode
+    - vm_already_exists | default(false)
+
 # Clone VM from template with network, hardware, and OS customization
 # Runs async to avoid blocking on long operations
+# Only runs when the VM does not already exist — re-running vmware_guest with
+# state=present on an existing VM triggers a reconfigure that fails on
+# distributed vSwitches (spec.deviceChange.device.port.switchUuid).
 - name: "Clone VM from template with inline customization"
   community.vmware.vmware_guest:
     hostname: "{{ vcenter_host }}"
@@ -64,7 +82,9 @@
   async: "{{ vm_async_timeout | default(3600) | int }}"
   poll: "{{ vm_poll_interval | default(0) | int }}"
   register: vm_creation
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - not (vm_already_exists | default(false))
   delegate_to: localhost
   connection: local
 
@@ -78,6 +98,7 @@
   delay: "{{ config_vm_async_delay | int }}"
   when:
     - not ansible_check_mode
+    - not (vm_already_exists | default(false))
     - vm_creation.ansible_job_id is defined
   delegate_to: localhost
   connection: local
@@ -93,7 +114,9 @@
     datacenter: "{{ config_vcenter_datacenter }}"
     annotation: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
     state: present
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - not (vm_already_exists | default(false))
   delegate_to: localhost
   connection: local
 
@@ -106,7 +129,7 @@
       - "========================================="
       - "VM Name: {{ config_vm_name }}"
       - "Template: {{ config_vm_template }}"
-      - "Status: {{ 'SUCCESS' if (job_result is defined and job_result.finished == 1) else 'FAILED' }}"
+      - "Status: {{ 'ALREADY EXISTS' if (vm_already_exists | default(false)) else ('SUCCESS' if (job_result is defined and job_result.finished == 1) else 'FAILED') }}"
       - "Changed: {{ job_result.changed | default(false) }}"
       - "Datacenter: {{ config_vcenter_datacenter }}"
       - "Cluster: {{ config_vcenter_cluster }}"
@@ -114,7 +137,7 @@
       - "========================================="
   when:
     - not ansible_check_mode
-    - job_result is defined
+    - (job_result is defined) or (vm_already_exists | default(false))
 
 # Retrieve detailed error information from async job result file
 - name: "Read async job result file for error details"
@@ -155,14 +178,14 @@
       2. Datastore has insufficient space or poor performance
       3. Template is corrupted or missing
       4. Network connectivity issues to vCenter
-      5. VM already exists and reconfiguration is hanging
-      6. DRS is interfering with VM creation
-      7. Guest customization is hanging (template not properly prepared)
+      5. DRS is interfering with VM creation
+      6. Guest customization is hanging (template not properly prepared)
       
       Check vCenter tasks for VM {{ config_vm_name }} to see actual status.
       Check the async job details above for specific error messages.
   when:
     - not ansible_check_mode
+    - not (vm_already_exists | default(false))
     - job_result is defined
     - job_result.finished != 1
 

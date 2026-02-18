@@ -63,9 +63,11 @@
     - validation
     - always
 
-- name: "Check if any VM is already using the target IP"
+# Exclude the target VM itself so re-provisioning the same host
+# does not produce a false-positive IP conflict warning.
+- name: "Check if any other VM is already using the target IP"
   ansible.builtin.set_fact:
-    conflicting_vms: "{{ all_vms_info.virtual_machines | default([]) | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | list }}"
+    conflicting_vms: "{{ all_vms_info.virtual_machines | default([]) | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | rejectattr('guest_name', 'equalto', config_vm_name) | list }}"
   when:
     - all_vms_info is defined
     - all_vms_info.virtual_machines is defined

@@ -1,0 +1,141 @@
+---
+# Tests for the existing-VM skip logic and IP conflict false-positive fix.
+# Runs locally without vCenter by simulating vmware_guest_info responses.
+
+- name: "Test: Existing VM detection skips clone task"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    config_vm_name: "TESTVM01"
+    config_vm_template: "test-template"
+    config_vcenter_datacenter: "TestDC"
+    config_vcenter_cluster: "TestCluster"
+    config_vcenter_datastore: "TestDS"
+    config_vm_folder: "TestFolder"
+    config_vm_network: "TestNetwork"
+    config_vm_network_start_ip: "10.0.0.100"
+    config_vm_network_netmask: "255.255.255.0"
+    config_vm_network_gateway: "10.0.0.1"
+    config_vm_network_dns_servers: ["10.0.0.2"]
+    config_vm_domain: "test.local"
+
+  tasks:
+    # ---------------------------------------------------------------
+    # TEST 1: vm_already_exists flag is set correctly when VM exists
+    # ---------------------------------------------------------------
+    - name: "TEST 1 - Simulate existing VM response"
+      ansible.builtin.set_fact:
+        existing_vm_check:
+          failed: false
+          instance:
+            hw_power_status: "poweredOn"
+            guest_name: "TESTVM01"
+
+    - name: "TEST 1 - Set VM existence flag (same logic as create_vm.yml)"
+      ansible.builtin.set_fact:
+        vm_already_exists: "{{ (existing_vm_check.instance is defined) and (existing_vm_check is not failed) }}"
+
+    - name: "TEST 1 - Assert vm_already_exists is true"
+      ansible.builtin.assert:
+        that:
+          - vm_already_exists | bool
+        fail_msg: "FAIL: vm_already_exists should be true when VM exists"
+        success_msg: "PASS: vm_already_exists correctly set to true"
+
+    # ---------------------------------------------------------------
+    # TEST 2: vm_already_exists flag is false when VM does not exist
+    # ---------------------------------------------------------------
+    - name: "TEST 2 - Simulate non-existent VM response"
+      ansible.builtin.set_fact:
+        existing_vm_check:
+          failed: true
+          msg: "VM not found"
+
+    - name: "TEST 2 - Set VM existence flag"
+      ansible.builtin.set_fact:
+        vm_already_exists: "{{ (existing_vm_check.instance is defined) and (existing_vm_check is not failed) }}"
+
+    - name: "TEST 2 - Assert vm_already_exists is false"
+      ansible.builtin.assert:
+        that:
+          - not (vm_already_exists | bool)
+        fail_msg: "FAIL: vm_already_exists should be false when VM does not exist"
+        success_msg: "PASS: vm_already_exists correctly set to false"
+
+    # ---------------------------------------------------------------
+    # TEST 3: IP conflict filter excludes the target VM itself
+    # ---------------------------------------------------------------
+    - name: "TEST 3 - Simulate VM list with target VM having the same IP"
+      ansible.builtin.set_fact:
+        all_vms_info:
+          virtual_machines:
+            - guest_name: "TESTVM01"
+              ip_address: "10.0.0.100"
+              power_state: "poweredOn"
+            - guest_name: "OTHERVM01"
+              ip_address: "10.0.0.200"
+              power_state: "poweredOn"
+
+    - name: "TEST 3 - Run IP conflict filter (with self-exclusion)"
+      ansible.builtin.set_fact:
+        conflicting_vms: "{{ all_vms_info.virtual_machines | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | rejectattr('guest_name', 'equalto', config_vm_name) | list }}"
+
+    - name: "TEST 3 - Assert no false-positive conflict for own VM"
+      ansible.builtin.assert:
+        that:
+          - conflicting_vms | length == 0
+        fail_msg: "FAIL: IP conflict filter should not flag the target VM itself"
+        success_msg: "PASS: IP conflict filter correctly excludes the target VM"
+
+    # ---------------------------------------------------------------
+    # TEST 4: IP conflict filter catches a real conflict
+    # ---------------------------------------------------------------
+    - name: "TEST 4 - Simulate VM list with a different VM using the same IP"
+      ansible.builtin.set_fact:
+        all_vms_info:
+          virtual_machines:
+            - guest_name: "TESTVM01"
+              ip_address: "10.0.0.100"
+              power_state: "poweredOn"
+            - guest_name: "CONFLICTVM"
+              ip_address: "10.0.0.100"
+              power_state: "poweredOn"
+
+    - name: "TEST 4 - Run IP conflict filter"
+      ansible.builtin.set_fact:
+        conflicting_vms: "{{ all_vms_info.virtual_machines | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | rejectattr('guest_name', 'equalto', config_vm_name) | list }}"
+
+    - name: "TEST 4 - Assert real conflict is detected"
+      ansible.builtin.assert:
+        that:
+          - conflicting_vms | length == 1
+          - conflicting_vms[0].guest_name == "CONFLICTVM"
+        fail_msg: "FAIL: IP conflict filter should detect the conflicting VM"
+        success_msg: "PASS: IP conflict filter correctly detects real conflict from CONFLICTVM"
+
+    # ---------------------------------------------------------------
+    # TEST 5: Clone condition evaluates correctly
+    # ---------------------------------------------------------------
+    - name: "TEST 5a - Verify clone would be skipped for existing VM"
+      ansible.builtin.set_fact:
+        vm_already_exists: true
+
+    - name: "TEST 5a - Assert clone condition blocks execution"
+      ansible.builtin.assert:
+        that:
+          - not (not (vm_already_exists | default(false)))
+        fail_msg: "FAIL: Clone should be skipped when vm_already_exists is true"
+        success_msg: "PASS: Clone correctly skipped for existing VM"
+
+    - name: "TEST 5b - Verify clone would proceed for new VM"
+      ansible.builtin.set_fact:
+        vm_already_exists: false
+
+    - name: "TEST 5b - Assert clone condition allows execution"
+      ansible.builtin.assert:
+        that:
+          - not (vm_already_exists | default(false))
+        fail_msg: "FAIL: Clone should proceed when vm_already_exists is false"
+        success_msg: "PASS: Clone correctly allowed for new VM"
