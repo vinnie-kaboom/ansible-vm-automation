@@ -7,6 +7,10 @@ config_vm_network: "GAXXXXXXXXX-XXXXX-xx.x.xxx.xx-xx"
 config_vm_domain: "xxxx.xxxxx.local"
 config_vm_network_use_dhcp: false
 config_vm_network_dns_servers: "xx.xx.xxx.xxx"
+
+# Domain join variables (used by roles/domain/join_domain)
+domain_name: "{{ config_vm_domain }}"
+dns_server: "{{ config_vm_network_dns_servers }}"
 config_vm_network_gateway: "xx.x.xxx.x"
 config_vm_network_netmask: "xxx.xxx.xxx.0"
 

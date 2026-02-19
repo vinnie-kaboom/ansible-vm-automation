@@ -182,3 +182,33 @@
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
+
+# Wait for the VM to boot and become reachable via SSH before running guest tasks
+- name: "Wait for VM to become reachable via SSH"
+  ansible.builtin.wait_for_connection:
+    delay: 30
+    timeout: 600
+  when:
+    - not ansible_check_mode
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+
+# Apply static IP configuration inside the guest to ensure it persists across reboots.
+# The vCenter customization spec sets the IP during clone, but nmcli makes it
+# permanent in NetworkManager so it survives network service restarts.
+- name: "Configure static IP inside guest using nmcli"
+  become: true
+  community.general.nmcli:
+    conn_name: ens192
+    ifname: ens192
+    type: ethernet
+    ip4: "{{ ansible_host }}/{{ config_vm_network_netmask | ipaddr('prefix') }}"
+    gw4: "{{ config_vm_network_gateway }}"
+    dns4: "{{ config_vm_network_dns_servers }}"
+    method4: manual
+    method6: ignore
+    state: up
+  when:
+    - not ansible_check_mode
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"

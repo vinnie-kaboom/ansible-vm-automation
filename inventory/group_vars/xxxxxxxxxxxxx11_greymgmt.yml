@@ -8,6 +8,10 @@ config_vm_network: "xxxxxxxxxxx11-GreySystemSupport-xx.x.xxx.xx-26"
 
 # DNS and Gateway - UPDATE THESE WITH REAL VALUES
 config_vm_network_dns_servers: "xx.x.xxx.xx"
+
+# Domain join variables (used by roles/domain/join_domain)
+# domain_name: "REPLACE_WITH_DOMAIN"  # e.g., "cce3.gpc"
+# dns_server: "{{ config_vm_network_dns_servers }}"
 config_vm_network_gateway: "xx.x.xxx.xx"
 config_vm_network_netmask: "255.255.255.0"
 

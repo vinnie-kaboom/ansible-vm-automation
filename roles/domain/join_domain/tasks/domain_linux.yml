@@ -168,6 +168,20 @@
   ansible.builtin.set_fact:
     has_enabled_repos: "{{ repo_check.stdout_lines | length > 1 }}"
 
+# oddjob and oddjob-mkhomedir live in AppStream; enable it if missing
+- name: Enable AppStream repository if not already enabled
+  when:
+    - not was_already_joined
+    - ansible_os_family == 'RedHat'
+    - ansible_distribution_major_version | int >= 8
+    - repo_check.stdout is defined
+    - "'appstream' not in repo_check.stdout | lower"
+  tags: [domain_join]
+  ansible.builtin.command: dnf config-manager --set-enabled appstream
+  register: appstream_enable_result
+  failed_when: false
+  changed_when: appstream_enable_result.rc == 0
+
 - name: Configure DNS for domain resolution
   when: not was_already_joined and dns_server is defined and dns_server != ''
   tags: [domain_join]

@@ -30,7 +30,7 @@ log_path: "logs"
 enable_connection_logging: false
 
 # VM Default VM sizing
-config_vm_memory_mb: 4096
+config_vm_memory_mb: 16384
 config_vm_cpu_count: 2
 config_vm_disk_size_gb: 60
 config_vm_disk_type: "thin"

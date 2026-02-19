@@ -8,6 +8,11 @@ config_vm_network: "xxxxxxxxxxxxx01_green"
 config_vm_domain: "cce3.gpc"
 config_vm_network_use_dhcp: false
 
+# Domain join variables (used by roles/domain/join_domain)
+domain_name: "{{ config_vm_domain }}"
+dns_server: "{{ config_vm_network_dns_servers[0] }}"
+dns_server_secondary: "{{ config_vm_network_dns_servers[1] | default('') }}"
+
 # DNS and Gateway - UPDATE THESE WITH REAL VALUES
 config_vm_network_dns_servers:
   - "10.x.x.x"  # Primary DNS - REPLACE WITH REAL IP
