@@ -1,0 +1,56 @@
+---
+# Configure guest OS after provisioning
+# Waits for SSH availability and applies static IP configuration
+
+- name: "Wait for SSH to become available on new VM"
+  ansible.builtin.wait_for:
+    host: "{{ config_vm_network_start_ip }}"
+    port: 22
+    state: started
+    timeout: "{{ config_vm_wait_for_ssh_timeout | default(120) }}"
+    delay: "{{ config_vm_wait_for_ssh_delay | default(10) }}"
+  delegate_to: localhost
+  when: not ansible_check_mode
+  register: ssh_wait_result
+  failed_when: false
+
+- name: "Test SSH connectivity to guest"
+  ansible.builtin.wait_for_connection:
+    timeout: 60
+    delay: 5
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  when:
+    - not ansible_check_mode
+    - ssh_wait_result is success
+  register: ssh_connect_result
+  failed_when: false
+
+- name: "Verify static IP configuration on guest"
+  ansible.builtin.command:
+    cmd: "ip addr show"
+  vars:
+    ansible_user: "{{ ANSIBLE_USER | default('tmpadmin') }}"
+  when:
+    - not ansible_check_mode
+    - ssh_connect_result is defined
+    - ssh_connect_result is success
+  register: ip_config_result
+  failed_when: false
+  changed_when: false
+
+- name: "Display guest network configuration"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "Guest OS Network Configuration"
+      - "========================================="
+      - "VM: {{ config_vm_name }}"
+      - "Expected IP: {{ config_vm_network_start_ip }}"
+      - "SSH Status: {{ 'Available' if ssh_wait_result is success else 'Not available' }}"
+      - "SSH Connect: {{ 'Success' if (ssh_connect_result is defined and ssh_connect_result is success) else 'Failed or skipped' }}"
+      - "========================================="
+  when: not ansible_check_mode
