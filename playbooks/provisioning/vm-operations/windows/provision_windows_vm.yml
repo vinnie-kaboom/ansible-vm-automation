@@ -8,6 +8,7 @@
 
   module_defaults:
     group/vmware:
+      hostname: "{{ vcenter_host }}"
       username: "{{ vcenter_user }}"
       password: "{{ vcenter_user_password }}"
       validate_certs: "{{ vcenter_validate_certs }}"

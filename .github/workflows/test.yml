@@ -12,4 +12,4 @@ jobs:
 
       - name: Run Ansible Playbook
         run: |
-          ansible-playbook -i inventory/hosts.yaml playbooks/ping.yaml
+          ansible-playbook -i inventory/hosts.ini playbooks/ping.yml

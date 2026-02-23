@@ -11,6 +11,6 @@
     - name: Execute Windows domain join workflow
       include_role:
         name: domain/join_domain
-        tasks_from: windows
+        tasks_from: domain_windows
       tags: [domain_join, windows]
 

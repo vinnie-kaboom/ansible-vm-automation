@@ -55,7 +55,7 @@
     - datacenter
   notify:
     - vcenter_datacenter_success
-    - vcenter_datacenter_failure      -
+    - vcenter_datacenter_failure
 
 - name: "Check cluster access permissions"
   community.vmware.vmware_cluster_info:

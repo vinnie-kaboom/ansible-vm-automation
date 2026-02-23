@@ -17,7 +17,7 @@ RUN apk update --no-cache && \
         musl-dev \
         libffi-dev \
         openssl-dev \
-        python3-dev \f
+        python3-dev \
         py3-pip \
         podman && \
     # Create Docker alias for Podman
