@@ -943,12 +943,14 @@
   tags: [domain_join]
   command: realm list
   register: post_join_realm_list
+  become: no
   failed_when: false
   changed_when: false
 
 - name: Warn if realm list is empty after join
   when: not was_already_joined and (post_join_realm_list.stdout is not defined or post_join_realm_list.stdout == '' or domain_name not in post_join_realm_list.stdout)
   tags: [domain_join]
+  become: no
   debug:
     msg: |
       WARNING: 'realm list' does not show {{ domain_name }} after join.
@@ -963,6 +965,7 @@
     (post_join_realm_list.stdout is not defined or post_join_realm_list.stdout == '' or domain_name not in post_join_realm_list.stdout) and
     join_successful | default(false)
   tags: [domain_join]
+  become: no
   set_fact:
     realm_rejoin_cmd: >-
       echo '{{ admin_password }}' | realm join '{{ domain_name }}'
@@ -976,6 +979,7 @@
     (post_join_realm_list.stdout is not defined or post_join_realm_list.stdout == '' or domain_name not in post_join_realm_list.stdout) and
     join_successful | default(false)
   tags: [domain_join]
+  become: no
   shell: |
     {{ realm_rejoin_cmd }} 2>&1 || true
     systemctl restart sssd 2>/dev/null || true
@@ -990,12 +994,14 @@
   tags: [domain_join]
   command: realm list
   register: final_realm_check
+  become: no
   failed_when: false
   changed_when: false
 
 - name: Report final domain join status
   when: not was_already_joined and (final_realm_check.stdout is not defined or final_realm_check.stdout == '' or domain_name not in final_realm_check.stdout)
   tags: [domain_join]
+  become: no
   debug:
     msg: |
       DOMAIN JOIN INCOMPLETE: 'realm list' still empty after recovery attempt.
