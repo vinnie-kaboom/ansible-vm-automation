@@ -1,0 +1,56 @@
+# Managed by Ansible - do not edit manually
+# This is the sshd server system-wide configuration file.  See
+# sshd_config(5) for more information.
+
+Include /etc/ssh/sshd_config.d/*.conf
+
+#Port 22
+#AddressFamily any
+#ListenAddress 0.0.0.0
+#ListenAddress ::
+
+#HostKey /etc/ssh/ssh_host_rsa_key
+#HostKey /etc/ssh/ssh_host_ecdsa_key
+#HostKey /etc/ssh/ssh_host_ed25519_key
+
+# Ciphers and keying
+#RekeyLimit default none
+
+# Logging
+SyslogFacility AUTH
+LogLevel INFO
+
+# Authentication
+LoginGraceTime 2m
+PermitRootLogin no
+StrictModes yes
+MaxAuthTries 3
+MaxSessions 10
+
+PubkeyAuthentication yes
+PasswordAuthentication yes
+PermitEmptyPasswords no
+ChallengeResponseAuthentication no
+UsePAM yes
+
+# Allow both AD and local admin groups to log in
+AllowGroups {{ sshd_allow_groups | default('"domain admins" gpc-dscada-linux-ssh gpc-dscada-linux-admin wheel') }}
+
+# Authorized keys location
+AuthorizedKeysFile .ssh/authorized_keys
+
+# Connection management / keep-alive
+ClientAliveInterval 300
+ClientAliveCountMax 2
+TCPKeepAlive yes
+
+# Access and environment hardening
+PermitUserEnvironment no
+X11Forwarding no
+AllowTcpForwarding yes
+PermitTunnel no
+
+# no default banner path
+#Banner none
+
+Subsystem sftp /usr/libexec/openssh/sftp-server

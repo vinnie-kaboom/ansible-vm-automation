@@ -509,16 +509,6 @@
   register: krb5_uncommented
   failed_when: false
 
-- name: Remove duplicate default_ccache_name from [logging] section
-  tags: [domain_join]
-  ansible.builtin.lineinfile:
-    path: /etc/krb5.conf
-    regexp: '^\s*default_ccache_name\s*=.*'
-    state: absent
-    insertafter: '^\[logging\]'
-  register: krb5_logging_fixed
-  failed_when: false
-
 - name: Verify krb5.conf has proper realms and domain_realm sections (uncommented)
   tags: [domain_join]
   ansible.builtin.shell: |

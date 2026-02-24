@@ -1,0 +1,83 @@
+---
+# Deploy hardened sshd_config and restart sshd
+
+- name: "Backup existing sshd_config"
+  ansible.builtin.copy:
+    src: /etc/ssh/sshd_config
+    dest: /etc/ssh/sshd_config.bak
+    remote_src: yes
+    mode: '0600'
+    owner: root
+    group: root
+    force: no
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'    
+  become: true
+  when:
+    - not ansible_check_mode
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+
+- name: "Deploy hardened sshd_config"
+  ansible.builtin.template:
+    src: sshd_config.j2
+    dest: /etc/ssh/sshd_config
+    owner: root
+    group: root
+    mode: '0600'
+    validate: /usr/sbin/sshd -t -f %s
+    backup: yes
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'    
+  become: true
+  register: sshd_config_result
+  when:
+    - not ansible_check_mode
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+
+- name: "Restart sshd to apply configuration"
+  ansible.builtin.systemd:
+    name: sshd
+    state: restarted
+    enabled: true
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'   
+  become: true
+  when:
+    - not ansible_check_mode
+    - sshd_config_result is defined
+    - sshd_config_result is changed
+
+- name: "Verify sshd is running after restart"
+  ansible.builtin.systemd:
+    name: sshd
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  become: true
+  register: sshd_service_status
+  when:
+    - not ansible_check_mode
+    - sshd_config_result is defined
+    - sshd_config_result is changed
+
+- name: "Fail if sshd did not start"
+  ansible.builtin.fail:
+    msg: "sshd failed to start after config change. Check /etc/ssh/sshd_config on {{ config_vm_name }}."
+  when:
+    - not ansible_check_mode
+    - sshd_service_status is defined
+    - sshd_service_status.status is defined
+    - sshd_service_status.status.ActiveState != 'active'
