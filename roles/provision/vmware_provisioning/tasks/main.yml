@@ -40,6 +40,16 @@
     - not (dry_run | default(false) | bool)
     - config_validate_ssh | default(true)
 
+- name: "Configure guest OS (static IP, disable IPv6)"
+  include_tasks: configure_guest.yml
+  tags:
+    - vm-operations
+    - guest_config
+  when:
+    - not (dry_run | default(false) | bool)
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+
 - name: "Report vm-operations issues"
   ansible.builtin.debug:
     msg:

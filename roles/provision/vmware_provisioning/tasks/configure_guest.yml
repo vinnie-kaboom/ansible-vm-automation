@@ -21,7 +21,7 @@
   vars:
     ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
     ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
-    ansible_become_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   when:
     - not ansible_check_mode
@@ -33,7 +33,9 @@
   ansible.builtin.command:
     cmd: "ip addr show"
   vars:
-    ansible_user: "{{ ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   when:
     - not ansible_check_mode
     - ssh_connect_result is defined
@@ -41,6 +43,242 @@
   register: ip_config_result
   failed_when: false
   changed_when: false
+
+# Detect which network configuration tool is available on the guest.
+# Also checks uid and available privilege escalation methods.
+- name: "Detect network configuration method and privilege level"
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    echo "user=$(id -u)"
+    if command -v nmcli >/dev/null 2>&1; then
+      echo "method=nmcli"
+    elif [ -d /etc/sysconfig/network-scripts ]; then
+      echo "method=ifcfg"
+    elif command -v netplan >/dev/null 2>&1; then
+      echo "method=netplan"
+    else
+      echo "method=ip"
+    fi
+    if command -v sudo >/dev/null 2>&1; then
+      echo "become=sudo"
+    elif command -v su >/dev/null 2>&1; then
+      echo "become=su"
+    else
+      echo "become=none"
+    fi
+  register: net_detect
+  changed_when: false
+  when:
+    - not ansible_check_mode
+    - ssh_connect_result is defined
+    - ssh_connect_result is success
+
+- name: "Parse detection results"
+  ansible.builtin.set_fact:
+    _net_method: "{{ net_detect.stdout | regex_search('method=(\\w+)', '\\1') | first }}"
+    _is_root: "{{ net_detect.stdout | regex_search('user=(\\d+)', '\\1') | first == '0' }}"
+    _become_method: "{{ net_detect.stdout | regex_search('become=(\\w+)', '\\1') | first }}"
+  when:
+    - net_detect is defined
+    - net_detect.stdout is defined
+
+- name: "Display detected network method"
+  ansible.builtin.debug:
+    msg: "Network method: {{ _net_method | default('unknown') }}, root: {{ _is_root | default('unknown') }}, become: {{ _become_method | default('unknown') }}"
+  when: _net_method is defined
+
+# --- Method 1: nmcli (NetworkManager) ---
+- name: "Configure static IP and disable IPv6 using nmcli"
+  become: "{{ not (_is_root | bool) }}"
+  become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
+  become_user: root
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    set -e
+    PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
+    PREFIX="${PREFIX:-24}"
+
+    # Find the connection name for ens192 (varies by VMware customization)
+    CONN_NAME=$(nmcli -t -f NAME,DEVICE connection show | grep ':ens192$' | head -1 | cut -d: -f1)
+    CONN_NAME="${CONN_NAME:-ens192}"
+
+    nmcli connection modify "${CONN_NAME}" \
+      ipv4.method manual \
+      ipv4.addresses "{{ ansible_host }}/${PREFIX}" \
+      ipv4.gateway "{{ config_vm_network_gateway }}" \
+      ipv4.dns "{{ config_vm_network_dns_servers | join(' ') if config_vm_network_dns_servers is not string else config_vm_network_dns_servers }}" \
+      ipv6.method disabled
+
+    nmcli connection up "${CONN_NAME}"
+  register: nmcli_result
+  failed_when: nmcli_result.rc != 0
+  when:
+    - not ansible_check_mode
+    - _net_method | default('') == 'nmcli'
+
+# --- Method 2: ifcfg scripts (RHEL/CentOS without NetworkManager) ---
+- name: "Configure static IP and disable IPv6 using ifcfg"
+  become: "{{ not (_is_root | bool) }}"
+  become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
+  become_user: root
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    set -e
+    PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
+    PREFIX="${PREFIX:-24}"
+
+    IFCFG="/etc/sysconfig/network-scripts/ifcfg-ens192"
+
+    cat > "${IFCFG}" <<EOF
+    TYPE=Ethernet
+    BOOTPROTO=none
+    NAME=ens192
+    DEVICE=ens192
+    ONBOOT=yes
+    IPADDR={{ ansible_host }}
+    PREFIX=${PREFIX}
+    GATEWAY={{ config_vm_network_gateway }}
+    {{ 'DNS1=' + config_vm_network_dns_servers[0] if config_vm_network_dns_servers is not string else 'DNS1=' + config_vm_network_dns_servers }}
+    {{ 'DNS2=' + config_vm_network_dns_servers[1] if (config_vm_network_dns_servers is not string and config_vm_network_dns_servers | length > 1) else '' }}
+    IPV6INIT=no
+    IPV6_AUTOCONF=no
+    EOF
+
+    # Remove leading whitespace and blank lines from heredoc
+    sed -i 's/^    //; /^$/d' "${IFCFG}"
+
+    # Restart networking
+    if command -v systemctl >/dev/null 2>&1; then
+      systemctl restart network 2>/dev/null || systemctl restart NetworkManager 2>/dev/null || true
+    else
+      service network restart 2>/dev/null || true
+    fi
+
+    # Apply immediately with ip commands
+    ip addr flush dev ens192
+    ip addr add {{ ansible_host }}/${PREFIX} dev ens192
+    ip route add default via {{ config_vm_network_gateway }} dev ens192 2>/dev/null || true
+    ip link set ens192 up
+
+    # Disable IPv6
+    sysctl -w net.ipv6.conf.ens192.disable_ipv6=1
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1
+    echo "net.ipv6.conf.ens192.disable_ipv6 = 1" >> /etc/sysctl.conf
+    echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+  register: ifcfg_result
+  failed_when: ifcfg_result.rc != 0
+  when:
+    - not ansible_check_mode
+    - _net_method | default('') == 'ifcfg'
+
+# --- Method 3: netplan (Ubuntu/Debian) ---
+- name: "Configure static IP and disable IPv6 using netplan"
+  become: "{{ not (_is_root | bool) }}"
+  become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
+  become_user: root
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    set -e
+    PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
+    PREFIX="${PREFIX:-24}"
+
+    # Remove existing netplan configs to avoid conflicts
+    rm -f /etc/netplan/*.yaml /etc/netplan/*.yml
+
+    cat > /etc/netplan/01-static-ens192.yaml <<EOF
+    network:
+      version: 2
+      ethernets:
+        ens192:
+          addresses:
+            - {{ ansible_host }}/${PREFIX}
+          gateway4: {{ config_vm_network_gateway }}
+          nameservers:
+            addresses: {{ config_vm_network_dns_servers if config_vm_network_dns_servers is not string else [config_vm_network_dns_servers] }}
+          link-local: []
+    EOF
+
+    # Remove leading whitespace from heredoc
+    sed -i 's/^    //' /etc/netplan/01-static-ens192.yaml
+
+    netplan apply
+
+    # Disable IPv6
+    sysctl -w net.ipv6.conf.ens192.disable_ipv6=1
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1
+    echo "net.ipv6.conf.ens192.disable_ipv6 = 1" >> /etc/sysctl.conf
+    echo "net.ipv6.conf.all.disable_ipv6 = 1" >> /etc/sysctl.conf
+  register: netplan_result
+  failed_when: netplan_result.rc != 0
+  when:
+    - not ansible_check_mode
+    - _net_method | default('') == 'netplan'
+
+# --- Method 4: ip command fallback (minimal systems) ---
+- name: "Configure static IP and disable IPv6 using ip commands"
+  become: "{{ not (_is_root | bool) }}"
+  become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
+  become_user: root
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    set -e
+    PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
+    PREFIX="${PREFIX:-24}"
+
+    ip addr flush dev ens192
+    ip addr add {{ ansible_host }}/${PREFIX} dev ens192
+    ip link set ens192 up
+    ip route replace default via {{ config_vm_network_gateway }} dev ens192
+
+    # Disable IPv6
+    sysctl -w net.ipv6.conf.ens192.disable_ipv6=1 2>/dev/null || true
+    sysctl -w net.ipv6.conf.all.disable_ipv6=1 2>/dev/null || true
+
+    # Persist in rc.local if available (ip commands are not persistent otherwise)
+    if [ -f /etc/rc.local ] || [ -d /etc/rc.d ]; then
+      RC_FILE="/etc/rc.local"
+      [ -d /etc/rc.d ] && RC_FILE="/etc/rc.d/rc.local"
+      grep -q "{{ ansible_host }}" "${RC_FILE}" 2>/dev/null || cat >> "${RC_FILE}" <<RCEOF
+    ip addr flush dev ens192
+    ip addr add {{ ansible_host }}/${PREFIX} dev ens192
+    ip link set ens192 up
+    ip route replace default via {{ config_vm_network_gateway }} dev ens192
+    RCEOF
+      chmod +x "${RC_FILE}"
+    fi
+  register: ip_result
+  failed_when: ip_result.rc != 0
+  when:
+    - not ansible_check_mode
+    - _net_method | default('') == 'ip'
+
+- name: "Display static IP configuration result"
+  ansible.builtin.debug:
+    msg:
+      - "Static IP configured via {{ _net_method | default('unknown') }}"
+      - "Result: {{ (nmcli_result if nmcli_result is not skipped else (ifcfg_result if ifcfg_result is not skipped else (netplan_result if netplan_result is not skipped else ip_result))).stdout_lines | default(['applied']) }}"
+  when:
+    - not ansible_check_mode
+    - _net_method is defined
 
 - name: "Display guest network configuration"
   ansible.builtin.debug:
