@@ -19,6 +19,12 @@
     - name: "Display provisioning method"
       debug:
         msg: "Using template-based provisioning method"
+
+    - name: "Set OS type for Linux provisioning"
+      ansible.builtin.set_fact:
+        config_vm_os: "RHEL"
+      when: config_vm_os is not defined or config_vm_os == ''
+
   roles:
     - role: provision/vmware_provisioning
       tags: [provision]

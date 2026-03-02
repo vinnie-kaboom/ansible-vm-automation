@@ -32,18 +32,21 @@ config_vm_validation_log_format: "json"
 
 # System configuration
 config_vm_timezone: "UTC"
-config_vm_update_system: true
-config_vm_update_system_security: true
-config_vm_enable_services: true
-config_vm_start_services: true
+#config_vm_update_system: true
+#config_vm_update_system_security: true
+#config_vm_enable_services: true
+#config_vm_start_services: true
 
 # Network adapter defaults
-config_vm_network_type: static              # Use static IP assignment
+config_vm_network_type: static
 config_vm_network_device_type: vmxnet3
-config_vm_network_start_connected: true     # Connect NIC at boot
+config_vm_network_start_connected: true
 
+
+# Guest OS type — drives customization spec selection and post-clone tasks.
+config_vm_os: ""
 
 # Customization behavior
-config_vm_skip_customization_on_failure: false  # Continue even if customization fails
-config_vm_customization_timeout: 1800           # Max time to wait for customization (30 min)
+config_vm_skip_customization_on_failure: false
+config_vm_customization_timeout: 1800
 

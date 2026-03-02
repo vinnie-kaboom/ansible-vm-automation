@@ -93,4 +93,4 @@
       # ------------------------------------------------------------
       # The entire cleanup block runs only when the variable
       # `cleanup_on_failure` is set to true (boolean).
-      when: cleanup_on_failure | default(false) | bool
+      when: cleanup_on_failure | bool
