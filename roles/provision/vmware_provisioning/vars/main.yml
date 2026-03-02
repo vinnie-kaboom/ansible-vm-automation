@@ -23,3 +23,4 @@ windows_customization:
   domainadminpassword: "{{ config_windows_domain_admin_password | default(omit) }}"
   joindomain: "{{ config_vm_domain if (config_windows_join_domain | default(false)) else omit }}"
   dns_servers: "{{ config_vm_network_dns_servers }}"
+

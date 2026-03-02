@@ -15,6 +15,12 @@
   vars:
     config_guest_os_type: windows
 
+  pre_tasks:
+    - name: "Set OS type for Windows provisioning"
+      ansible.builtin.set_fact:
+        config_vm_os: "Windows 2022"
+      when: config_vm_os is not defined or config_vm_os == ''
+
   roles:
     - role: provision/vmware_provisioning
       tags: vm-operations
