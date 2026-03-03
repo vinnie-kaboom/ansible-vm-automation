@@ -1,6 +1,6 @@
 ---
-# Creates VM from template using vmware.vmware collection
-# Split into: deploy_folder_template (clone) + vm (configure) + vm_apply_customization (OS config)
+# Creates VM from template using vmware.vmware + vmware.vmware_rest collections
+# deploy_folder_template (clone) + vm (hardware) + vcenter_vm_guest_customization (OS config)
 
 # Dry-run simulation for check mode
 - name: "Clone VM from template (Check Mode)"
@@ -76,63 +76,79 @@
   delegate_to: localhost
   connection: local
 
-# Configure VM hardware (CPU, memory, network adapter, annotation)
-- name: "Configure VM hardware and network adapter"
-  vmware.vmware.vm:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    annotation: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
-    cpu:
-      cores: "{{ config_vm_cpu_count | int }}"
-    memory:
-      size_mb: "{{ config_vm_memory_mb | int }}"
-    network_adapters:
-      - network: "{{ config_vm_network }}"
-        adapter_type: "{{ config_vm_network_device_type | default('vmxnet3') }}"
-        connected: true
-        connect_at_power_on: "{{ config_vm_network_start_connected | default(true) }}"
-    scsi_controllers:
-      - controller_type: paravirtual
-        bus_number: 0
-  when:
-    - not ansible_check_mode
-    - job_result is defined
-    - job_result.finished == 1
+# If VM already existed, look up its MoID for downstream tasks
+- name: "Look up existing VM MoID"
+  vmware.vmware_rest.vcenter_vm_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    filter_names:
+      - "{{ config_vm_name }}"
+  register: existing_vm_lookup
   delegate_to: localhost
   connection: local
+  when:
+    - not ansible_check_mode
+    - existing_vm_check.guests | default([]) | length > 0
 
-# Apply guest OS customization (hostname, DNS, static IP)
-# This is applied while VM is powered off; runs on next power-on
-- name: "Apply Linux guest OS customization"
-  vmware.vmware.vm_apply_customization:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    unix_prep:
-      domain: "{{ config_vm_domain }}"
-      hostname: "{{ config_vm_name.split('.')[0] }}"
-    nic_specific_settings:
-      - ipv4:
-          address: "{{ config_vm_network_start_ip }}"
-          subnet_mask: "{{ config_vm_network_netmask }}"
-          gateways:
-            - "{{ config_vm_network_gateway }}"
-        dns_servers: "{{ config_vm_network_dns_servers if config_vm_network_dns_servers is not string else [config_vm_network_dns_servers] }}"
-    global_dns:
-      servers: "{{ config_vm_network_dns_servers if config_vm_network_dns_servers is not string else [config_vm_network_dns_servers] }}"
-      resolution_suffixes:
-        - "{{ config_vm_domain }}"
+- name: "Store existing VM MoID"
+  ansible.builtin.set_fact:
+    _vm_moid: "{{ existing_vm_lookup.value[0].vm }}"
+    _vm_network_prefix: "{{ ('0.0.0.0/' + config_vm_network_netmask) | ansible.utils.ipaddr('prefix') }}"
+  when:
+    - not ansible_check_mode
+    - existing_vm_lookup is defined
+    - existing_vm_lookup.value is defined
+    - existing_vm_lookup.value | length > 0
+
+# Note: vmware.vmware v2.3.0 has no general-purpose VM reconfigure module.
+# Hardware (CPU, memory, disk) is inherited from the template.
+# If you need to override hardware post-clone, use vmware.vmware_rest.vcenter_vm
+# or ensure the template has the correct specs.
+
+# Store the VM MoID from the deploy result for use with vmware_rest modules
+- name: "Store VM MoID from deployment"
+  ansible.builtin.set_fact:
+    _vm_moid: "{{ job_result.vm.moid }}"
+    _vm_network_prefix: "{{ ('0.0.0.0/' + config_vm_network_netmask) | ansible.utils.ipaddr('prefix') }}"
   when:
     - not ansible_check_mode
     - job_result is defined
     - job_result.finished == 1
+    - job_result.vm is defined
+
+# Apply guest OS customization (hostname, DNS, static IP)
+# Uses vmware.vmware_rest which requires the VM MoID, not the name
+# Customization is applied while VM is powered off; executes on next power-on
+- name: "Apply Linux guest OS customization"
+  vmware.vmware_rest.vcenter_vm_guest_customization:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ _vm_moid }}"
+    configuration_spec:
+      linux_config:
+        hostname:
+          fixed_name: "{{ config_vm_name.split('.')[0] }}"
+          type: FIXED
+        domain: "{{ config_vm_domain }}"
+    global_DNS_settings:
+      dns_suffix_list:
+        - "{{ config_vm_domain }}"
+      dns_servers: "{{ config_vm_network_dns_servers if config_vm_network_dns_servers is not string else config_vm_network_dns_servers.split(',') | map('trim') | list }}"
+    interfaces:
+      - adapter:
+          ipv4:
+            type: STATIC
+            ip_address: "{{ config_vm_network_start_ip }}"
+            prefix: "{{ _vm_network_prefix }}"
+            gateways:
+              - "{{ config_vm_network_gateway }}"
+  when:
+    - not ansible_check_mode
+    - _vm_moid is defined
     - config_vm_os is defined
     - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
   delegate_to: localhost

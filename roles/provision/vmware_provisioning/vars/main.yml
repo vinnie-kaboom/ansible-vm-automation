@@ -1,5 +1,5 @@
 ---
-# vmware.vmware collection migration note:
-# Guest OS customization is now handled by vmware.vmware.vm_apply_customization
-# in create_vm.yml, using unix_prep/windows_sysprep parameters directly.
-# The old linux_customization/windows_customization dicts are no longer needed.
+# vmware.vmware + vmware.vmware_rest collection migration note:
+# Guest OS customization is handled by vmware.vmware_rest.vcenter_vm_guest_customization
+# in create_vm.yml, using linux_config/interfaces parameters.
+# The old community.vmware linux_customization/windows_customization dicts are no longer needed.

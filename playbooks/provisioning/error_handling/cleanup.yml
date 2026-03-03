@@ -36,12 +36,31 @@
           when: vm_power_info.failed == false
           ignore_errors: true
 
-        - name: "Remove VM"
-          vmware.vmware.vm:
-            name: "{{ config_vm_name }}"
-            datacenter: "{{ config_vcenter_datacenter }}"
-            state: absent
+        - name: "Look up VM MoID for deletion"
+          vmware.vmware_rest.vcenter_vm_info:
+            vcenter_hostname: "{{ vcenter_host }}"
+            vcenter_username: "{{ vcenter_user }}"
+            vcenter_password: "{{ vcenter_user_password }}"
+            vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+            filter_names:
+              - "{{ config_vm_name }}"
+          register: vm_lookup
           when: vm_power_info.failed == false
+          ignore_errors: true
+
+        - name: "Remove VM"
+          vmware.vmware_rest.vcenter_vm:
+            vcenter_hostname: "{{ vcenter_host }}"
+            vcenter_username: "{{ vcenter_user }}"
+            vcenter_password: "{{ vcenter_user_password }}"
+            vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+            vm: "{{ vm_lookup.value[0].vm }}"
+            state: absent
+          when:
+            - vm_power_info.failed == false
+            - vm_lookup is defined
+            - vm_lookup.value is defined
+            - vm_lookup.value | length > 0
           ignore_errors: true
 
       when: cleanup_on_failure | bool
