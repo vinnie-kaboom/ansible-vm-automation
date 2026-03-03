@@ -2,25 +2,26 @@
 # Network Validation Tasks
 # Tests network connectivity and validates IP configuration
 
-- name: "Get VM network details via VMware Tools (for diagnostics)"
-  community.vmware.vmware_vm_shell:
-    hostname: "{{ vcenter_host }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    vm_id: "{{ config_vm_name }}"
-    vm_username: "{{ config_vm_root_user | default('root') }}"
-    vm_password: "{{ config_vm_root_password }}"
-    vm_shell: "/bin/bash"
-    vm_shell_args: "-c 'echo \"=== Network Interfaces ===\"; ip addr show; echo \"=== Routes ===\"; ip route show; echo \"=== DNS ===\"; cat /etc/resolv.conf 2>/dev/null || echo \"No resolv.conf\"; echo \"=== Ping Gateway ===\"; ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo \"Cannot ping gateway\"'"
-    wait_for_process: true
-    timeout: 30
+- name: "Get VM network details via SSH (for diagnostics)"
+  ansible.builtin.shell: |
+    echo "=== Network Interfaces ==="
+    ip addr show
+    echo "=== Routes ==="
+    ip route show
+    echo "=== DNS ==="
+    cat /etc/resolv.conf 2>/dev/null || echo "No resolv.conf"
+    echo "=== Ping Gateway ==="
+    ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo "Cannot ping gateway"
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('root') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   when:
     - not ansible_check_mode
-    - config_vm_root_password is defined
-    - config_vm_root_password | length > 0
-  delegate_to: localhost
-  connection: local
+    - vm_is_pingable | default(false)
   ignore_errors: true
   register: vm_network_diagnostics
+  changed_when: false
 
 - name: "Display VM internal network diagnostics"
   ansible.builtin.debug:

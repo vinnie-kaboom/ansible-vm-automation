@@ -7,7 +7,7 @@
   connection: local
 
   module_defaults:
-    group/vmware:
+    group/vmware.vmware.vmware:
       username: "{{ vcenter_user }}"
       password: "{{ vcenter_user_password }}"
       validate_certs: "{{ vcenter_validate_certs }}"

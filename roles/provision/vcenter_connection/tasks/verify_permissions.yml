@@ -1,8 +1,13 @@
 ---
 
-- name: "Check vCenter API version"
-  community.vmware.vmware_about_info:
+- name: "Check vCenter appliance info"
+  vmware.vmware.appliance_info:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    properties:
+      - summary
   delegate_to: localhost
   register: vcenter_info
   tags:
@@ -13,10 +18,10 @@
 - name: "Validate vCenter API version"
   assert:
     that:
-      - vcenter_info.about_info.api_version is defined
-      - vcenter_info.about_info.api_version is version('6.7', '>=')
-    fail_msg: "vCenter API version {{ vcenter_info.about_info.api_version }} is below minimum required version 6.7"
-    success_msg: "vCenter API version {{ vcenter_info.about_info.api_version }} meets minimum requirements"
+      - vcenter_info.appliance.summary.version is defined
+      - vcenter_info.appliance.summary.version is version('6.7', '>=')
+    fail_msg: "vCenter version {{ vcenter_info.appliance.summary.version | default('unknown') }} is below minimum required version 6.7"
+    success_msg: "vCenter version {{ vcenter_info.appliance.summary.version }} meets minimum requirements"
   when: vcenter_validation_check_api_version | default(true) | bool
   register: api_check
   tags:
@@ -28,9 +33,11 @@
     - vcenter_api_failure
 
 - name: "Check datacenter access permissions"
-  community.vmware.vmware_datacenter_info:
-    hostname: "{{ vcenter_host }}"
-    datacenter: "{{ config_vcenter_datacenter | default('') }}"
+  vmware.vmware_rest.vcenter_datacenter_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
   delegate_to: localhost
   register: datacenter_access
   ignore_errors: false
@@ -55,11 +62,14 @@
     - datacenter
   notify:
     - vcenter_datacenter_success
-    - vcenter_datacenter_failure      -
+    - vcenter_datacenter_failure
 
 - name: "Check cluster access permissions"
-  community.vmware.vmware_cluster_info:
+  vmware.vmware.cluster_info:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
     datacenter: "{{ config_vcenter_datacenter | default('') }}"
     cluster_name: "{{ config_vcenter_cluster }}"
   register: cluster_access
@@ -88,9 +98,11 @@
     - vcenter_cluster_failure
 
 - name: "Check datastore access permissions"
-  community.vmware.vmware_datastore_info:
-    hostname: "{{ vcenter_host }}"
-    name: "{{ config_vcenter_datastore | default('') }}"  # vcenter_datastore
+  vmware.vmware_rest.vcenter_datastore_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
   register: datastore_access
   ignore_errors: false
   when: config_vcenter_datastore | default('') != ''

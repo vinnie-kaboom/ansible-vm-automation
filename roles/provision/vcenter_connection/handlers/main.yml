@@ -2,12 +2,12 @@
 - name: vcenter_api_success
   debug:
     msg: >
-      ✅ vCenter API version {{ vcenter_info.about_info.api_version }} meets minimum requirements.
+      ✅ vCenter version {{ vcenter_info.appliance.summary.version }} meets minimum requirements.
 
 - name: vcenter_api_failure
   debug:
     msg: >
-      ❌ vCenter API version {{ vcenter_info.about_info.api_version | default('unknown') }}
+      ❌ vCenter version {{ vcenter_info.appliance.summary.version | default('unknown') }}
       is below the minimum required version.
 
 - name: vcenter_datacenter_success

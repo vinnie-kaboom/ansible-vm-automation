@@ -12,7 +12,7 @@
   connection: local
 
   module_defaults:
-    group/vmware:
+    group/vmware.vmware.vmware:
       hostname: "{{ vcenter_host }}"
       username: "{{ vcenter_user }}"
       password: "{{ vcenter_user_password }}"
@@ -22,21 +22,22 @@
     - name: "Check if cleanup is needed"
       block:
         - name: "Get VM power state"
-          community.vmware.vmware_guest_info:
+          vmware.vmware.guest_info:
             name: "{{ config_vm_name }}"
             datacenter: "{{ config_vcenter_datacenter }}"
           register: vm_power_info
           ignore_errors: true
 
         - name: "Power off VM if running"
-          community.vmware.vmware_guest_powerstate:
+          vmware.vmware.vm_powerstate:
             name: "{{ config_vm_name }}"
+            datacenter: "{{ config_vcenter_datacenter }}"
             state: powered-off
           when: vm_power_info.failed == false
           ignore_errors: true
 
         - name: "Remove VM"
-          community.vmware.vmware_guest:
+          vmware.vmware.vm:
             name: "{{ config_vm_name }}"
             datacenter: "{{ config_vcenter_datacenter }}"
             state: absent

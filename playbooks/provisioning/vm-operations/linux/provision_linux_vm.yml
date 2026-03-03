@@ -9,7 +9,7 @@
   tags: [provision, linux]
 
   module_defaults:
-    group/vmware:
+    group/vmware.vmware.vmware:
       hostname: "{{ vcenter_host }}"
       username: "{{ vcenter_user }}"
       password: "{{ vcenter_user_password }}"
