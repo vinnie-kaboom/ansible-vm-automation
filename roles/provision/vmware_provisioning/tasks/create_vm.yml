@@ -1,6 +1,6 @@
 ---
-# Creates VM from template using vmware.vmware + vmware.vmware_rest collections
-# deploy_folder_template (clone) + vm (hardware) + vcenter_vm_guest_customization (OS config)
+# Creates VM from template using vmware.vmware.deploy_folder_template (clone)
+# and vmware.vmware_rest modules (info, customization, power)
 
 # Dry-run simulation for check mode
 - name: "Clone VM from template (Check Mode)"
@@ -8,36 +8,36 @@
     msg: "CHECK MODE: Would clone {{ config_vm_name }} from template {{ config_vm_template }}"
   when: ansible_check_mode
 
-# Query vCenter for VM existence and current state
+# Query vCenter for VM existence
 - name: "Check if VM already exists"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
+  vmware.vmware_rest.vcenter_vm_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    filter_names:
+      - "{{ config_vm_name }}"
   register: existing_vm_check
   delegate_to: localhost
   connection: local
   ignore_errors: true
   when: not ansible_check_mode
 
-# Display VM existence and power state for visibility
+# Display VM existence for visibility
 - name: "Display existing VM status"
   ansible.builtin.debug:
     msg:
       - "VM {{ config_vm_name }} existence check:"
-      - "Exists: {{ existing_vm_check.guests | default([]) | length > 0 }}"
-      - "Power State: {{ existing_vm_check.guests[0].hw_power_status | default('N/A') if existing_vm_check.guests | default([]) | length > 0 else 'N/A' }}"
+      - "Exists: {{ existing_vm_check.value | default([]) | length > 0 }}"
+      - "Power State: {{ existing_vm_check.value[0].power_state | default('N/A') if existing_vm_check.value | default([]) | length > 0 else 'N/A' }}"
   when:
     - not ansible_check_mode
     - existing_vm_check is defined
 
-# Clone VM from template
-# deploy_folder_template handles placement (datacenter, cluster, datastore, folder)
-# Power on is deferred so we can apply customization first
-- name: "Clone VM from template"
+# Clone VM from template (folder-based, not content library)
+# deploy_folder_template is the only module that supports folder templates
+# cluster and resource_pool are mutually exclusive — only pass resource_pool if set
+- name: "Clone VM from template (with cluster)"
   vmware.vmware.deploy_folder_template:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
@@ -50,16 +50,47 @@
     datacenter: "{{ config_vcenter_datacenter }}"
     cluster: "{{ config_vcenter_cluster }}"
     datastore: "{{ config_vcenter_datastore }}"
-    resource_pool: "{{ config_vcenter_resource_pool | default(omit) }}"
     power_on_after_deploy: false
   async: "{{ vm_async_timeout | default(3600) | int }}"
   poll: "{{ vm_poll_interval | default(0) | int }}"
   register: vm_creation
   when:
     - not ansible_check_mode
-    - existing_vm_check.guests | default([]) | length == 0
+    - existing_vm_check.value | default([]) | length == 0
+    - config_vcenter_resource_pool | default('') | length == 0
   delegate_to: localhost
   connection: local
+
+- name: "Clone VM from template (with resource pool)"
+  vmware.vmware.deploy_folder_template:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    template_name: "{{ config_vm_template }}"
+    template_folder: "{{ config_vm_folder }}"
+    vm_name: "{{ config_vm_name }}"
+    vm_folder: "{{ config_vm_folder }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    resource_pool: "{{ config_vcenter_resource_pool }}"
+    datastore: "{{ config_vcenter_datastore }}"
+    power_on_after_deploy: false
+  async: "{{ vm_async_timeout | default(3600) | int }}"
+  poll: "{{ vm_poll_interval | default(0) | int }}"
+  register: vm_creation_rp
+  when:
+    - not ansible_check_mode
+    - existing_vm_check.value | default([]) | length == 0
+    - config_vcenter_resource_pool | default('') | length > 0
+  delegate_to: localhost
+  connection: local
+
+# Merge the two possible creation results
+- name: "Consolidate VM creation result"
+  ansible.builtin.set_fact:
+    vm_creation: "{{ vm_creation_rp if (vm_creation_rp is defined and vm_creation_rp is not skipped) else vm_creation }}"
+  when:
+    - not ansible_check_mode
 
 # Poll async job until completion or timeout
 - name: "Wait for VM creation to complete"
@@ -76,8 +107,8 @@
   delegate_to: localhost
   connection: local
 
-# If VM already existed, look up its MoID for downstream tasks
-- name: "Look up existing VM MoID"
+# Look up the VM MoID (needed for all vmware_rest operations)
+- name: "Look up VM MoID"
   vmware.vmware_rest.vcenter_vm_info:
     vcenter_hostname: "{{ vcenter_host }}"
     vcenter_username: "{{ vcenter_user }}"
@@ -85,42 +116,28 @@
     vcenter_validate_certs: "{{ vcenter_validate_certs }}"
     filter_names:
       - "{{ config_vm_name }}"
-  register: existing_vm_lookup
+  register: vm_moid_lookup
   delegate_to: localhost
   connection: local
   when:
     - not ansible_check_mode
-    - existing_vm_check.guests | default([]) | length > 0
 
-- name: "Store existing VM MoID"
+- name: "Store VM MoID"
   ansible.builtin.set_fact:
-    _vm_moid: "{{ existing_vm_lookup.value[0].vm }}"
+    _vm_moid: "{{ vm_moid_lookup.value[0].vm }}"
     _vm_network_prefix: "{{ ('0.0.0.0/' + config_vm_network_netmask) | ansible.utils.ipaddr('prefix') }}"
   when:
     - not ansible_check_mode
-    - existing_vm_lookup is defined
-    - existing_vm_lookup.value is defined
-    - existing_vm_lookup.value | length > 0
+    - vm_moid_lookup.value is defined
+    - vm_moid_lookup.value | length > 0
 
 # Note: vmware.vmware v2.3.0 has no general-purpose VM reconfigure module.
 # Hardware (CPU, memory, disk) is inherited from the template.
-# If you need to override hardware post-clone, use vmware.vmware_rest.vcenter_vm
-# or ensure the template has the correct specs.
-
-# Store the VM MoID from the deploy result for use with vmware_rest modules
-- name: "Store VM MoID from deployment"
-  ansible.builtin.set_fact:
-    _vm_moid: "{{ job_result.vm.moid }}"
-    _vm_network_prefix: "{{ ('0.0.0.0/' + config_vm_network_netmask) | ansible.utils.ipaddr('prefix') }}"
-  when:
-    - not ansible_check_mode
-    - job_result is defined
-    - job_result.finished == 1
-    - job_result.vm is defined
+# If you need to override hardware post-clone, use vmware.vmware_rest.vcenter_vm_hardware_cpu,
+# vcenter_vm_hardware_memory, etc.
 
 # Apply guest OS customization (hostname, DNS, static IP)
-# Uses vmware.vmware_rest which requires the VM MoID, not the name
-# Customization is applied while VM is powered off; executes on next power-on
+# Applied while VM is powered off; executes on next power-on
 - name: "Apply Linux guest OS customization"
   vmware.vmware_rest.vcenter_vm_guest_customization:
     vcenter_hostname: "{{ vcenter_host }}"
@@ -163,15 +180,14 @@
       - "========================================="
       - "VM Name: {{ config_vm_name }}"
       - "Template: {{ config_vm_template }}"
-      - "Status: {{ 'SUCCESS' if (job_result is defined and job_result.finished == 1) else 'FAILED' }}"
-      - "Changed: {{ job_result.changed | default(false) }}"
+      - "VM MoID: {{ _vm_moid | default('unknown') }}"
+      - "Status: {{ 'SUCCESS' if (job_result is defined and job_result.finished == 1) else 'SKIPPED (VM exists)' if (existing_vm_check.value | default([]) | length > 0) else 'FAILED' }}"
       - "Datacenter: {{ config_vcenter_datacenter }}"
       - "Cluster: {{ config_vcenter_cluster }}"
       - "Datastore: {{ config_vcenter_datastore }}"
       - "========================================="
   when:
     - not ansible_check_mode
-    - job_result is defined
 
 # Retrieve detailed error information from async job result file
 - name: "Read async job result file for error details"
@@ -184,6 +200,7 @@
   when:
     - not ansible_check_mode
     - job_result is defined
+    - job_result.finished is defined
     - job_result.finished != 1
     - job_result.results_file is defined
 
@@ -206,21 +223,20 @@
   ansible.builtin.fail:
     msg: |
       VM creation failed or timed out after {{ config_vm_async_retries * config_vm_async_delay }} seconds.
-      
+
       Possible causes:
       1. vCenter is overloaded or slow
       2. Datastore has insufficient space or poor performance
       3. Template is corrupted or missing
       4. Network connectivity issues to vCenter
-      5. VM already exists and reconfiguration is hanging
-      6. DRS is interfering with VM creation
-      7. Guest customization is hanging (template not properly prepared)
-      
+      5. DRS is interfering with VM creation
+      6. Guest customization is hanging (template not properly prepared)
+
       Check vCenter tasks for VM {{ config_vm_name }} to see actual status.
-      Check the async job details above for specific error messages.
   when:
     - not ansible_check_mode
     - job_result is defined
+    - job_result.finished is defined
     - job_result.finished != 1
 
 # Dry-run simulation for check mode
@@ -231,14 +247,15 @@
 
 # Power on VM — customization spec will execute during boot
 - name: "Power on VM"
-  vmware.vmware.vm_powerstate:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    state: powered-on
-  when: not ansible_check_mode
+  vmware.vmware_rest.vcenter_vm_power:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ _vm_moid }}"
+    state: start
+  when:
+    - not ansible_check_mode
+    - _vm_moid is defined
   delegate_to: localhost
   connection: local

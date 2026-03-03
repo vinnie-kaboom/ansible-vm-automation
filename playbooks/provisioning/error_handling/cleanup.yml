@@ -3,6 +3,7 @@
 # PLAYBOOK: Error Handling and Cleanup
 # ===================================================================================
 # Checks VM state in vCenter, powers off if needed, and removes it.
+# Uses vmware.vmware_rest modules exclusively.
 # ===================================================================================
 
 - name: "Error Handling and Cleanup"
@@ -11,32 +12,10 @@
   gather_facts: false
   connection: local
 
-  module_defaults:
-    group/vmware.vmware.vmware:
-      hostname: "{{ vcenter_host }}"
-      username: "{{ vcenter_user }}"
-      password: "{{ vcenter_user_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
-
   tasks:
     - name: "Check if cleanup is needed"
       block:
-        - name: "Get VM power state"
-          vmware.vmware.guest_info:
-            name: "{{ config_vm_name }}"
-            datacenter: "{{ config_vcenter_datacenter }}"
-          register: vm_power_info
-          ignore_errors: true
-
-        - name: "Power off VM if running"
-          vmware.vmware.vm_powerstate:
-            name: "{{ config_vm_name }}"
-            datacenter: "{{ config_vcenter_datacenter }}"
-            state: powered-off
-          when: vm_power_info.failed == false
-          ignore_errors: true
-
-        - name: "Look up VM MoID for deletion"
+        - name: "Look up VM in vCenter"
           vmware.vmware_rest.vcenter_vm_info:
             vcenter_hostname: "{{ vcenter_host }}"
             vcenter_username: "{{ vcenter_user }}"
@@ -45,7 +24,20 @@
             filter_names:
               - "{{ config_vm_name }}"
           register: vm_lookup
-          when: vm_power_info.failed == false
+          ignore_errors: true
+
+        - name: "Power off VM if running"
+          vmware.vmware_rest.vcenter_vm_power:
+            vcenter_hostname: "{{ vcenter_host }}"
+            vcenter_username: "{{ vcenter_user }}"
+            vcenter_password: "{{ vcenter_user_password }}"
+            vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+            vm: "{{ vm_lookup.value[0].vm }}"
+            state: stop
+          when:
+            - vm_lookup is succeeded
+            - vm_lookup.value | default([]) | length > 0
+            - vm_lookup.value[0].power_state | default('') == 'POWERED_ON'
           ignore_errors: true
 
         - name: "Remove VM"
@@ -57,10 +49,8 @@
             vm: "{{ vm_lookup.value[0].vm }}"
             state: absent
           when:
-            - vm_power_info.failed == false
-            - vm_lookup is defined
-            - vm_lookup.value is defined
-            - vm_lookup.value | length > 0
+            - vm_lookup is succeeded
+            - vm_lookup.value | default([]) | length > 0
           ignore_errors: true
 
       when: cleanup_on_failure | bool

@@ -6,12 +6,6 @@
   gather_facts: true
   connection: local
 
-  module_defaults:
-    group/vmware.vmware.vmware:
-      username: "{{ vcenter_user }}"
-      password: "{{ vcenter_user_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
-
   roles:
     - role: provision/vm_validation
       vars:

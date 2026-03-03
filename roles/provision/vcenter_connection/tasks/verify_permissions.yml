@@ -1,38 +1,7 @@
 ---
+# All checks use vmware.vmware_rest modules
 
-- name: "Check vCenter appliance info"
-  vmware.vmware.appliance_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
-    properties:
-      - summary
-  delegate_to: localhost
-  register: vcenter_info
-  tags:
-    - vcenter
-    - permissions
-    - api_version
-
-- name: "Validate vCenter API version"
-  assert:
-    that:
-      - vcenter_info.appliance.summary.version is defined
-      - vcenter_info.appliance.summary.version is version('6.7', '>=')
-    fail_msg: "vCenter version {{ vcenter_info.appliance.summary.version | default('unknown') }} is below minimum required version 6.7"
-    success_msg: "vCenter version {{ vcenter_info.appliance.summary.version }} meets minimum requirements"
-  when: vcenter_validation_check_api_version | default(true) | bool
-  register: api_check
-  tags:
-    - vcenter
-    - permissions
-    - api_version
-  notify:
-    - vcenter_api_success
-    - vcenter_api_failure
-
-- name: "Check datacenter access permissions"
+- name: "Check vCenter datacenter access"
   vmware.vmware_rest.vcenter_datacenter_info:
     vcenter_hostname: "{{ vcenter_host }}"
     vcenter_username: "{{ vcenter_user }}"
@@ -40,87 +9,102 @@
     vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
   delegate_to: localhost
   register: datacenter_access
-  ignore_errors: false
-  when: vcenter_validation_check_datacenter_access | default(true) | bool
   tags:
     - vcenter
     - permissions
-    - datacenter
-  notify:
-    - vcenter_datacenter_success
-    - vcenter_datacenter_failure
 
 - name: "Validate datacenter access"
-  debug:
-    msg: "Datacenter access verified successfully"
-  when:
-    - vcenter_validation_check_datacenter_access | default(true) | bool
-    - datacenter_access is not skipped
+  ansible.builtin.assert:
+    that:
+      - datacenter_access is succeeded
+      - datacenter_access.value | default([]) | length > 0
+    fail_msg: "Cannot access any datacenters in vCenter. Check credentials and permissions."
+    success_msg: "Datacenter access verified ({{ datacenter_access.value | length }} datacenter(s) found)"
   tags:
     - vcenter
     - permissions
-    - datacenter
-  notify:
-    - vcenter_datacenter_success
-    - vcenter_datacenter_failure
 
-- name: "Check cluster access permissions"
-  vmware.vmware.cluster_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs | default(false) }}"
-    datacenter: "{{ config_vcenter_datacenter | default('') }}"
-    cluster_name: "{{ config_vcenter_cluster }}"
+- name: "Check cluster access"
+  vmware.vmware_rest.vcenter_cluster_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    filter_names:
+      - "{{ config_vcenter_cluster }}"
+  delegate_to: localhost
   register: cluster_access
   ignore_errors: false
-  when: vcenter_validation_check_cluster_access | default(true) | bool
+  when: config_vcenter_cluster | default('') | length > 0
   tags:
     - vcenter
     - permissions
-    - cluster
-  notify:
-    - vcenter_cluster_success
-    - vcenter_cluster_failure
 
 - name: "Validate cluster access"
-  debug:
-    msg: "Cluster access verified successfully"
-  when:
-    - vcenter_validation_check_cluster_access | default(true) | bool
-    - cluster_access is not skipped
+  ansible.builtin.assert:
+    that:
+      - cluster_access is succeeded
+      - cluster_access.value | default([]) | length > 0
+    fail_msg: "Cluster '{{ config_vcenter_cluster }}' not found or not accessible."
+    success_msg: "Cluster '{{ config_vcenter_cluster }}' access verified"
+  when: config_vcenter_cluster | default('') | length > 0
   tags:
     - vcenter
     - permissions
-    - cluster
-  notify:
-    - vcenter_cluster_success
-    - vcenter_cluster_failure
 
-- name: "Check datastore access permissions"
+- name: "Check datastore access"
   vmware.vmware_rest.vcenter_datastore_info:
     vcenter_hostname: "{{ vcenter_host }}"
     vcenter_username: "{{ vcenter_user }}"
     vcenter_password: "{{ vcenter_user_password }}"
     vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+    filter_names:
+      - "{{ config_vcenter_datastore }}"
+  delegate_to: localhost
   register: datastore_access
   ignore_errors: false
-  when: config_vcenter_datastore | default('') != ''
+  when: config_vcenter_datastore | default('') | length > 0
   tags:
     - vcenter
     - permissions
-    - datastore
-  notify:
-    - vcenter_datastore_success
-    - vcenter_datastore_failure
 
 - name: "Validate datastore access"
-  debug:
-    msg: "Datastore access verified successfully"
-  when:
-    - config_vcenter_datastore | default('') != ''
-    - datastore_access is not skipped
+  ansible.builtin.assert:
+    that:
+      - datastore_access is succeeded
+      - datastore_access.value | default([]) | length > 0
+    fail_msg: "Datastore '{{ config_vcenter_datastore }}' not found or not accessible."
+    success_msg: "Datastore '{{ config_vcenter_datastore }}' access verified"
+  when: config_vcenter_datastore | default('') | length > 0
   tags:
     - vcenter
     - permissions
-    - datastore
+
+- name: "Check network access"
+  vmware.vmware_rest.vcenter_network_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+  delegate_to: localhost
+  register: network_access
+  ignore_errors: true
+  tags:
+    - vcenter
+    - permissions
+
+- name: "Display vCenter connectivity summary"
+  ansible.builtin.debug:
+    msg:
+      - "========================================="
+      - "vCenter Connectivity Summary"
+      - "========================================="
+      - "Host: {{ vcenter_host }}"
+      - "Datacenters: {{ datacenter_access.value | map(attribute='name') | list }}"
+      - "Cluster: {{ config_vcenter_cluster | default('N/A') }}"
+      - "Datastore: {{ config_vcenter_datastore | default('N/A') }}"
+      - "Networks: {{ network_access.value | default([]) | length }} found"
+      - "========================================="
+  tags:
+    - vcenter
+    - permissions

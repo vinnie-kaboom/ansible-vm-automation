@@ -6,12 +6,6 @@
   gather_facts: false
   connection: local
 
-  module_defaults:
-    group/vmware.vmware.vmware:
-      username: "{{ vcenter_user }}"
-      password: "{{ vcenter_user_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
-
   vars:
     config_guest_os_type: windows
 

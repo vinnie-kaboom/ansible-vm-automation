@@ -8,13 +8,6 @@
   serial: "{{ vm_parallel_count | default(1) }}"
   tags: [provision, linux]
 
-  module_defaults:
-    group/vmware.vmware.vmware:
-      hostname: "{{ vcenter_host }}"
-      username: "{{ vcenter_user }}"
-      password: "{{ vcenter_user_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
-
   pre_tasks:
     - name: "Display provisioning method"
       debug:

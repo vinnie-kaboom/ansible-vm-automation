@@ -30,17 +30,16 @@
     - validation
     - always
 
-- name: "Query all VMs in vCenter to check for IP conflicts"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-  when: config_vm_network_start_ip is defined
+# IP conflict check: ping the target IP to see if anything responds
+# vcenter_vm_info list view doesn't include IPs, so a network check is more reliable
+- name: "Check for IP conflicts via ping"
+  ansible.builtin.command:
+    cmd: "ping -c 1 -W 2 {{ config_vm_network_start_ip }}"
+  register: ip_conflict_ping
   delegate_to: localhost
   ignore_errors: true
-  register: all_vms_info
+  changed_when: false
+  when: config_vm_network_start_ip is defined
 
 # Validate hostname follows RFC 952/1123 (required by VMware customization)
 - name: "Validate VM hostname format"
@@ -63,12 +62,11 @@
     - validation
     - always
 
-- name: "Check if any VM is already using the target IP"
+- name: "Check if any host is already using the target IP"
   ansible.builtin.set_fact:
-    conflicting_vms: "{{ all_vms_info.guests | default([]) | selectattr('hw_name', 'defined') | selectattr('ipv4', 'defined') | selectattr('ipv4', 'equalto', config_vm_network_start_ip) | list }}"
+    ip_is_in_use: "{{ ip_conflict_ping.rc == 0 }}"
   when:
-    - all_vms_info is defined
-    - all_vms_info.virtual_machines is defined
+    - ip_conflict_ping is defined
     - config_vm_network_start_ip is defined
 
 # Validate domain name format
@@ -85,20 +83,18 @@
     - validation
     - always
 
-- name: "Warn if IP address is already assigned to another VM"
+- name: "Warn if IP address is already in use"
   ansible.builtin.debug:
     msg:
-      - "⚠️  WARNING: IP address {{ config_vm_network_start_ip }} is already assigned to another VM in vCenter!"
+      - "WARNING: IP address {{ config_vm_network_start_ip }} responded to ping!"
       - "Target VM: {{ config_vm_name }}"
-      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='hw_name') | list }}"
-      - "Power State(s): {{ conflicting_vms | map(attribute='hw_power_status') | list }}"
-      - "This WILL cause guest customization to fail on the new VM."
+      - "This WILL cause guest customization to fail or create a conflict."
       - "Action required:"
       - "  - Change the IP address in inventory for {{ config_vm_name }}"
-      - "  - Or power off/delete the conflicting VM(s)"
+      - "  - Or identify and remove the host using this IP"
   when:
-    - conflicting_vms is defined
-    - conflicting_vms | length > 0
+    - ip_is_in_use is defined
+    - ip_is_in_use | bool
 
 # Validate network configuration variables are defined
 - name: "Validate network configuration"
