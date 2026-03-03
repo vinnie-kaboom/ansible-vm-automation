@@ -26,7 +26,7 @@
       ansible.builtin.debug:
         msg:
           - "vCenter Host: {{ vcenter_host }}"
-          - "Datacenter: {{ vcenter_datacenter }}"
+          - "Datacenter: {{ config_vcenter_datacenter }}"
           - "Template: {{ _template_name }}"
       when: not _use_content_library
       tags: [vm-operations, validation]
@@ -58,7 +58,7 @@
 
     - name: "Display resolved validation parameters"
       ansible.builtin.debug:
-        msg: "Validated template '{{ _template_name }}' in datacenter '{{ vcenter_datacenter }}'"
+        msg: "Validated template '{{ _template_name }}' in datacenter '{{ config_vcenter_datacenter }}'"
       tags: [vm-operations, validation]
 
     - name: "Set config validation result - PASSED"

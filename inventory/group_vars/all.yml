@@ -9,12 +9,6 @@ vcenter_user: "{{ secrets.VCENTER_USERNAME | default('') }}"
 vcenter_user_password: "{{ secrets.VCENTER_PASSWORD | default('') }}"
 vcenter_validate_certs: "{{ secrets.VCENTER_VALIDATE_CERTS | default('false') | bool }}"
 
-# vCenter infrastructure (mapped from zone/network group_vars)
-vcenter_datacenter: "{{ config_vcenter_datacenter | default('') }}"
-vcenter_cluster: "{{ config_vcenter_cluster | default('') }}"
-vcenter_datastore: "{{ config_vcenter_datastore | default('') }}"
-vcenter_resource_pool: "{{ config_vcenter_resource_pool | default('') }}"
-
 # VM guest credentials (for VMware Tools operations)
 config_vm_root_user: "{{ secrets.VM_ROOT_USER | default('root') }}"
 config_vm_root_password: "{{ secrets.VM_ROOT_PASSWORD | default('') }}"

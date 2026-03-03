@@ -19,7 +19,7 @@
 
     - name: "Skip cluster validation (validated during vm-operations)"
       ansible.builtin.set_fact:
-        cluster_info: "{{ {'name': vcenter_cluster, 'skipped': true} }}"
+        cluster_info: "{{ {'name': config_vcenter_cluster, 'skipped': true} }}"
       tags: validation
 
     - name: "Set resource validation result - PASSED"

@@ -6,7 +6,6 @@
 # Network configuration
 config_vm_network: "xxxxxxxxxxxxx01_green"
 config_vm_domain: "cce3.gpc"
-config_vm_network_use_dhcp: false
 
 # Domain join variables (used by roles/domain/join_domain)
 domain_name: "{{ config_vm_domain }}"
@@ -24,7 +23,6 @@ config_vm_network_netmask: "255.255.255.0"  # REPLACE IF DIFFERENT
 config_vm_name: "{{ inventory_hostname }}"
 config_vm_network_start_ip: "{{ ansible_host }}"
 config_vm_network_end_ip: "{{ ansible_host }}"
-config_vm_network_domain: "{{ config_vm_domain }}"
 
 # Default VM sizing
 config_vm_memory_mb: 4096

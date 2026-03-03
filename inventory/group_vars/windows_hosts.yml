@@ -2,30 +2,9 @@
 # ===================================================================================
 # ALL WINDOWS HOSTS - OS-Specific Configuration
 # ===================================================================================
-#
-# PURPOSE:
-#   Windows-specific settings for all Windows hosts across all zones
-#   All hosts in windows_hosts group inherit these variables
-# ===================================================================================
 
 # --- Connection Settings ---
 ansible_connection: winrm
 ansible_winrm_server_cert_validation: ignore
 ansible_winrm_transport: ntlm
 ansible_port: 5986
-
-# --- OS-Specific Package Management ---
-config_vm_package_manager: "chocolatey"
-config_vm_common_packages: "curl, wget, vim, git, python3"
-config_vm_update_system: true
-config_vm_update_system_security: true
-
-# --- Windows-Specific Services ---
-config_vm_common_services: "W32Time, Winmgmt"
-config_vm_enable_services: true
-config_vm_start_services: true
-
-# --- Windows-Specific Security ---
-config_vm_disable_root_login: false
-config_vm_enable_firewall: true
-config_vm_secure_boot: false

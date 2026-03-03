@@ -5,7 +5,6 @@
 
 config_vm_network: "GAXXXXXXXXX-XXXXX-xx.x.xxx.xx-xx"
 config_vm_domain: "xxxx.xxxxx.local"
-config_vm_network_use_dhcp: false
 config_vm_network_dns_servers: "xx.xx.xxx.xxx"
 
 # Domain join variables (used by roles/domain/join_domain)
@@ -18,7 +17,6 @@ config_vm_network_netmask: "xxx.xxx.xxx.0"
 config_vm_name: "{{ inventory_hostname }}"
 config_vm_network_start_ip: "{{ vm_host_ip }}"
 config_vm_network_end_ip: "{{ vm_host_ip }}"
-config_vm_network_domain: "{{ config_vm_domain }}"
 
 # Default VM sizing
 config_vm_memory_mb: 4096

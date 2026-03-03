@@ -14,23 +14,6 @@
       warnings: "{{ validation_warnings | default([]) }}"
   tags: validation
 
-- name: "Display validation summary"
-  ansible.builtin.debug:
-    msg:
-      - "========================================="
-      - "VM Validation Report"
-      - "========================================="
-      - "VM Name: {{ validation_report.vm_name }}"
-      - "Environment: {{ validation_report.environment }}"
-      - "Timestamp: {{ validation_report.timestamp }}"
-      - "========================================="
-      - "Validation Results:"
-      - "  Config: {{ validation_report.validations.config }}"
-      - "  Resources: {{ validation_report.validations.resources }}"
-      - "  Network: {{ validation_report.validations.network }}"
-      - "========================================="
-  tags: validation
-
 - name: "Note pending validations"
   ansible.builtin.debug:
     msg: "⚠️  Note: {{ item.key }} validation is PENDING (not implemented or skipped)"
