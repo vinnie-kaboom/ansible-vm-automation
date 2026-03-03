@@ -14,7 +14,7 @@
     host: "{{ config_vm_network_start_ip }}"
     port: 22
     state: started
-    timeout: 300
+    timeout: 300 
     delay: 10
   when:
     - not ansible_check_mode
