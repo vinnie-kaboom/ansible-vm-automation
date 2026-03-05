@@ -9,6 +9,19 @@
   tags: [provision, linux]
 
   pre_tasks:
+    # aiohttp is required by vmware.vmware_rest modules (REST-based vCenter API).
+    # pyvmomi is required by vmware.vmware modules (pyvmomi-based vCenter API).
+    # These are installed at runtime because the runner host may not have them.
+    - name: "Install required Python libraries for VMware modules"
+      ansible.builtin.pip:
+        name:
+          - aiohttp
+          - pyvmomi
+        state: present
+      delegate_to: localhost
+      become: false
+      run_once: true
+
     - name: "Display provisioning method"
       debug:
         msg: "Using template-based provisioning method"

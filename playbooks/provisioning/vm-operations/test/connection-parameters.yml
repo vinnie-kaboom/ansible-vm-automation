@@ -5,11 +5,16 @@
   gather_facts: true
   connection: local
 
-  module_defaults:
-    group/vmware:
-      username: "{{ vcenter_user }}"
-      password: "{{ vcenter_user_password }}"
-      validate_certs: "{{ vcenter_validate_certs }}"
+  pre_tasks:
+    - name: "Install required Python libraries for VMware modules"
+      ansible.builtin.pip:
+        name:
+          - aiohttp
+          - pyvmomi
+        state: present
+      delegate_to: localhost
+      become: false
+      run_once: true
 
   roles:
     - role: provision/vcenter_connection
