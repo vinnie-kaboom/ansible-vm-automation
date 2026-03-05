@@ -11,15 +11,17 @@
   pre_tasks:
     # aiohttp is required by vmware.vmware_rest modules (REST-based vCenter API).
     # pyvmomi is required by vmware.vmware modules (pyvmomi-based vCenter API).
-    # These are installed at runtime because the runner host may not have them.
+    # executable must match the interpreter Ansible uses for delegate_to: localhost
+    # tasks (/usr/bin/python3) so the libraries are importable by the modules.
     - name: "Install required Python libraries for VMware modules"
       ansible.builtin.pip:
         name:
           - aiohttp
           - pyvmomi
         state: present
+        executable: /usr/bin/pip3
       delegate_to: localhost
-      become: false
+      become: true
       run_once: true
 
     - name: "Display provisioning method"

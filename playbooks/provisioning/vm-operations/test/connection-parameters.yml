@@ -12,8 +12,9 @@
           - aiohttp
           - pyvmomi
         state: present
+        executable: /usr/bin/pip3
       delegate_to: localhost
-      become: false
+      become: true
       run_once: true
 
   roles:
