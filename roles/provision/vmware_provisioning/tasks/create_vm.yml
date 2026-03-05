@@ -1,61 +1,14 @@
 ---
 # Creates VM from template using vmware.vmware collection (v2.3.0+).
-# Customization applied via vCenter REST API (ansible.builtin.uri) - no aiohttp needed.
-# pyvmomi is required for deploy_folder_template, guest_info, and vm_powerstate.
+# Only deploy_folder_template and vm_powerstate are used from vmware.vmware (pyvmomi only).
+# All vCenter queries use ansible.builtin.uri (stdlib, no aiohttp/SDK needed).
 
 - name: "Clone VM from template (Check Mode)"
   ansible.builtin.debug:
     msg: "CHECK MODE: Would clone {{ config_vm_name }} from template {{ config_vm_template }}"
   when: ansible_check_mode
 
-# Check existence via guest_info - returns guests[] list, empty if VM not found.
-- name: "Check if VM already exists"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-  register: existing_vm_check
-  delegate_to: localhost
-  ignore_errors: true
-  when: not ansible_check_mode
-
-- name: "Display existing VM status"
-  ansible.builtin.debug:
-    msg:
-      - "VM {{ config_vm_name }} existence check:"
-      - "Exists: {{ (existing_vm_check.guests | default([]) | length) > 0 }}"
-      - "Power State: {{ existing_vm_check.guests[0].hw_power_status | default('N/A') }}"
-  when:
-    - not ansible_check_mode
-    - existing_vm_check is defined
-
-# deploy_folder_template clones synchronously - no async polling needed.
-# power_on_after_deploy: false so we can apply customization before first boot.
-- name: "Clone VM from template"
-  vmware.vmware.deploy_folder_template:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    vm_name: "{{ config_vm_name }}"
-    template_name: "{{ config_vm_template }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    cluster: "{{ config_vcenter_cluster | default(omit) }}"
-    resource_pool: "{{ config_vcenter_resource_pool | default(omit) }}"
-    vm_folder: "{{ config_vm_folder }}"
-    datastore: "{{ config_vcenter_datastore }}"
-    power_on_after_deploy: false
-  register: vm_creation
-  delegate_to: localhost
-  when:
-    - not ansible_check_mode
-    - existing_vm_check.guests | default([]) | length == 0
-
-# Authenticate to vCenter REST API for customization calls.
-# ansible.builtin.uri uses Python urllib (stdlib) - no aiohttp needed.
+# Single auth call - token reused for all subsequent REST API calls in this file.
 - name: "Authenticate to vCenter REST API"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/session"
@@ -68,12 +21,75 @@
   register: vcenter_session
   delegate_to: localhost
   no_log: true
+  when: not ansible_check_mode
+
+# Returns [] if VM does not exist, [{"vm": "vm-123", ...}] if it does.
+- name: "Check if VM already exists"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: existing_vm_check
+  delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Display existing VM status"
+  ansible.builtin.debug:
+    msg:
+      - "VM {{ config_vm_name }} existence check:"
+      - "Exists: {{ (existing_vm_check.json | default([]) | length) > 0 }}"
+      - "Power State: {{ existing_vm_check.json[0].power_state | default('N/A') }}"
   when:
     - not ansible_check_mode
-    - vm_creation is not skipped
-    - not vm_creation.failed | default(false)
+    - existing_vm_check is defined
 
-# Look up the VM's MOID so we can call the customization API.
+# deploy_folder_template clones synchronously - no async polling needed.
+# power_on_after_deploy: false so customization is applied before first boot.
+# cluster and resource_pool are mutually exclusive - pass only the one that is set.
+- name: "Clone VM from template (cluster placement)"
+  vmware.vmware.deploy_folder_template:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    vm_name: "{{ config_vm_name }}"
+    template_name: "{{ config_vm_template }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    cluster: "{{ config_vcenter_cluster }}"
+    vm_folder: "{{ config_vm_folder }}"
+    datastore: "{{ config_vcenter_datastore }}"
+    power_on_after_deploy: false
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - existing_vm_check.json | default([]) | length == 0
+    - config_vcenter_resource_pool | default('') == ''
+
+- name: "Clone VM from template (resource pool placement)"
+  vmware.vmware.deploy_folder_template:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    vm_name: "{{ config_vm_name }}"
+    template_name: "{{ config_vm_template }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    resource_pool: "{{ config_vcenter_resource_pool }}"
+    vm_folder: "{{ config_vm_folder }}"
+    datastore: "{{ config_vcenter_datastore }}"
+    power_on_after_deploy: false
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - existing_vm_check.json | default([]) | length == 0
+    - config_vcenter_resource_pool | default('') != ''
+
+# Look up the new VM's MOID for the customization API call.
 - name: "Look up VM MOID"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
@@ -86,8 +102,8 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vcenter_session is defined
-    - not vcenter_session.failed | default(false)
+    - not vm_creation.failed | default(false)
+    - vm_creation is not skipped
 
 - name: "Set VM MOID fact"
   ansible.builtin.set_fact:
@@ -183,8 +199,8 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_creation is not skipped
     - not vm_creation.failed | default(false)
+    - vm_creation is not skipped
 
 - name: "Display VM creation result"
   ansible.builtin.debug:
