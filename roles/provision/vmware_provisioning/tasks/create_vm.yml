@@ -1,14 +1,15 @@
 ---
-# Creates VM from template using vmware.vmware collection (v2.3.0+).
-# Only deploy_folder_template and vm_powerstate are used from vmware.vmware (pyvmomi only).
-# All vCenter queries use ansible.builtin.uri (stdlib, no aiohttp/SDK needed).
+# Creates VM from template using vCenter REST API via ansible.builtin.uri.
+# ansible.builtin.uri uses Python urllib (stdlib) - no aiohttp or pyvmomi needed.
+# filter.names is not supported on this vCenter; all lookups fetch full lists
+# and filter client-side with selectattr.
 
 - name: "Clone VM from template (Check Mode)"
   ansible.builtin.debug:
     msg: "CHECK MODE: Would clone {{ config_vm_name }} from template {{ config_vm_template }}"
   when: ansible_check_mode
 
-# Single auth call - token reused for all subsequent REST API calls in this file.
+# Authenticate to vCenter REST API - token reused for all subsequent calls.
 - name: "Authenticate to vCenter REST API"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/session"
@@ -20,11 +21,9 @@
     status_code: 201
   register: vcenter_session
   delegate_to: localhost
-  no_log: true
   when: not ansible_check_mode
+  no_log: true
 
-# filter.names query param is not supported on all vCenter versions.
-# Fetch all VMs and filter by name client-side.
 - name: "List all VMs in vCenter"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm"
@@ -35,6 +34,7 @@
     status_code: 200
   register: all_vms_list
   delegate_to: localhost
+  ignore_errors: true
   when: not ansible_check_mode
 
 - name: "Find existing VM by name"
@@ -54,77 +54,136 @@
     - not ansible_check_mode
     - existing_vm_check is defined
 
-# deploy_folder_template clones synchronously - no async polling needed.
-# power_on_after_deploy: false so customization is applied before first boot.
-# cluster and resource_pool are mutually exclusive - pass only the one that is set.
-- name: "Clone VM from template (cluster placement)"
-  vmware.vmware.deploy_folder_template:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    vm_name: "{{ config_vm_name }}"
-    template_name: "{{ config_vm_template }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    cluster: "{{ config_vcenter_cluster }}"
-    vm_folder: "{{ config_vm_folder }}"
-    datastore: "{{ config_vcenter_datastore }}"
-    power_on_after_deploy: false
-  register: vm_creation
-  delegate_to: localhost
+# Look up MOIDs needed for the clone placement spec.
+# Templates appear in the VM list endpoint.
+- name: "Find template MOID"
+  ansible.builtin.set_fact:
+    template_moid: "{{ (all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_template) | list)[0].vm | default('') }}"
   when:
     - not ansible_check_mode
-    - existing_vm_check | default([]) | length == 0
-    - config_vcenter_resource_pool | default('') == ''
+    - all_vms_list is defined
 
-- name: "Clone VM from template (resource pool placement)"
-  vmware.vmware.deploy_folder_template:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    vm_name: "{{ config_vm_name }}"
-    template_name: "{{ config_vm_template }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    resource_pool: "{{ config_vcenter_resource_pool }}"
-    vm_folder: "{{ config_vm_folder }}"
-    datastore: "{{ config_vcenter_datastore }}"
-    power_on_after_deploy: false
-  register: vm_creation
-  delegate_to: localhost
+- name: "Fail if template not found"
+  ansible.builtin.fail:
+    msg: "Template '{{ config_vm_template }}' not found in vCenter."
   when:
     - not ansible_check_mode
-    - existing_vm_check | default([]) | length == 0
-    - config_vcenter_resource_pool | default('') != ''
+    - template_moid | default('') == ''
 
-# Reuse the all_vms_list fetched earlier; re-query if the VM was just created.
-- name: "Refresh VM list to get MOID of newly created VM"
+- name: "List all datastores"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm"
+    url: "https://{{ vcenter_host }}/api/vcenter/datastore"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: all_vms_list
+  register: datastore_list
+  delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Find datastore MOID"
+  ansible.builtin.set_fact:
+    datastore_moid: "{{ (datastore_list.json | default([]) | selectattr('name', 'equalto', config_vcenter_datastore) | list)[0].datastore | default('') }}"
+  when:
+    - not ansible_check_mode
+    - datastore_list is defined
+
+- name: "List all clusters"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/cluster"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: cluster_list
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - not vm_creation.failed | default(false)
-    - vm_creation is not skipped
+    - config_vcenter_resource_pool | default('') == ''
 
-- name: "Set VM MOID fact"
+- name: "Find cluster MOID"
   ansible.builtin.set_fact:
-    vm_moid: "{{ (all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list)[0].vm }}"
+    cluster_moid: "{{ (cluster_list.json | default([]) | selectattr('name', 'equalto', config_vcenter_cluster) | list)[0].cluster | default('') }}"
   when:
     - not ansible_check_mode
-    - all_vms_list is defined
-    - all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list | length > 0
+    - cluster_list is defined
 
-# Apply Linux OS customization (hostname, domain, DNS) before first power-on.
+- name: "List all VM folders"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/folder?filter.type=VIRTUAL_MACHINE"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: folder_list
+  delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Find folder MOID"
+  ansible.builtin.set_fact:
+    folder_moid: "{{ (folder_list.json | default([]) | selectattr('name', 'equalto', config_vm_folder) | list)[0].folder | default('') }}"
+  when:
+    - not ansible_check_mode
+    - folder_list is defined
+
+# Clone from template using cluster placement.
+- name: "Clone VM from template (cluster)"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
+    method: POST
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    body_format: json
+    body:
+      name: "{{ config_vm_name }}"
+      source: "{{ template_moid }}"
+      placement:
+        cluster: "{{ cluster_moid }}"
+        datastore: "{{ datastore_moid }}"
+        folder: "{{ folder_moid }}"
+      power_on: false
+    status_code: 201
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') == ''
+    - existing_vm_check | default([]) | length == 0
+
+# Clone from template using resource pool placement.
+- name: "Clone VM from template (resource pool)"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
+    method: POST
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    body_format: json
+    body:
+      name: "{{ config_vm_name }}"
+      source: "{{ template_moid }}"
+      placement:
+        resource_pool: "{{ config_vcenter_resource_pool }}"
+        datastore: "{{ datastore_moid }}"
+        folder: "{{ folder_moid }}"
+      power_on: false
+    status_code: 201
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') != ''
+    - existing_vm_check | default([]) | length == 0
+
+# Apply Linux OS customization before first power-on.
+# vm_creation.json is the new VM's MOID string returned by the clone API.
 - name: "Apply Linux guest customization"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_moid }}/guest/customization"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/customization"
     method: PUT
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -147,14 +206,14 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_moid is defined
+    - vm_creation.json is defined
     - config_vm_os is defined
     - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
 
 # Apply Windows sysprep customization before first power-on.
 - name: "Apply Windows guest customization"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_moid }}/guest/customization"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/customization"
     method: PUT
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -186,7 +245,7 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_moid is defined
+    - vm_creation.json is defined
     - config_vm_os is defined
     - "'Windows' in config_vm_os"
 
@@ -196,19 +255,17 @@
   when: ansible_check_mode
 
 - name: "Power on VM"
-  vmware.vmware.vm_powerstate:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/power?action=start"
+    method: POST
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    state: powered-on
+    status_code: 204
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - not vm_creation.failed | default(false)
-    - vm_creation is not skipped
+    - vm_creation.json is defined
 
 - name: "Display VM creation result"
   ansible.builtin.debug:
@@ -218,6 +275,7 @@
       - "========================================="
       - "VM Name: {{ config_vm_name }}"
       - "Template: {{ config_vm_template }}"
+      - "VM MOID: {{ vm_creation.json | default('N/A') }}"
       - "Status: {{ 'SUCCESS' if (vm_creation is defined and not vm_creation.failed | default(false)) else 'FAILED' }}"
       - "Datacenter: {{ config_vcenter_datacenter }}"
       - "Cluster: {{ config_vcenter_cluster }}"
@@ -229,16 +287,7 @@
 
 - name: "Fail if VM creation did not complete"
   ansible.builtin.fail:
-    msg: |
-      VM creation failed for {{ config_vm_name }}.
-
-      Possible causes:
-      1. Template '{{ config_vm_template }}' not found in folder '{{ config_vm_folder }}'
-      2. Datastore '{{ config_vcenter_datastore }}' has insufficient space
-      3. Cluster or resource pool not accessible
-      4. VM already exists with conflicting configuration
-
-      Check vCenter tasks for VM {{ config_vm_name }} to see actual status.
+    msg: "VM creation failed for {{ config_vm_name }}. Check vCenter tasks for details."
   when:
     - not ansible_check_mode
     - vm_creation is defined

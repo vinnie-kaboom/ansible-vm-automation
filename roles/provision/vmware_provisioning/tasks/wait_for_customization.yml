@@ -1,13 +1,12 @@
 ---
-# Polls VM state via vCenter REST API (ansible.builtin.uri).
-# No aiohttp, pyvmomi, or vSphere Automation SDK required.
-# vcenter_session and vm_moid are set by create_vm.yml earlier in the same role run.
+# Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
+# Session token passed in from create_vm.yml via vcenter_session variable.
 
-# Poll the VM power state directly via its MOID - avoids filter.names which
-# is not supported on all vCenter versions.
+# Poll power state directly via MOID - avoids filter.names which is unsupported here.
+# vm_creation.json is the MOID string returned by the clone API in create_vm.yml.
 - name: "Wait for VM to be powered on"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_moid }}/power"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/power"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -22,15 +21,14 @@
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
   when:
     - not ansible_check_mode
-    - vm_moid is defined
+    - vm_creation.json is defined
   delegate_to: localhost
   failed_when: false
 
-# Poll guest networking until the expected IP appears.
-# Requires VMware Tools to be running inside the guest.
+# Poll guest networking until expected IP appears.
 - name: "Wait for VM to obtain correct IP address"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_moid }}/guest/networking/interfaces"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/networking"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -39,14 +37,13 @@
   register: vm_network_info
   until: >
     vm_network_info.json is defined and
-    vm_network_info.json | default([]) | length > 0 and
-    vm_network_info.json | map(attribute='ip') | map(attribute='ip_addresses') | flatten |
-    selectattr('ip_address', 'equalto', config_vm_network_start_ip) | list | length > 0
+    vm_network_info.json.ip_address is defined and
+    vm_network_info.json.ip_address == config_vm_network_start_ip
   retries: 20
   delay: 15
   when:
     - not ansible_check_mode
-    - vm_moid is defined
+    - vm_creation.json is defined
   delegate_to: localhost
   failed_when: false
 
@@ -55,25 +52,13 @@
     seconds: "{{ config_vm_post_boot_wait | default(30) | int }}"
   when: not ansible_check_mode
 
-# Flatten all IPs reported by VMware Tools across all interfaces.
 - name: "Set IP check facts"
   ansible.builtin.set_fact:
-    _all_ips: >-
-      {{ vm_network_info.json | default([])
-         | map(attribute='ip') | map(attribute='ip_addresses') | flatten
-         | map(attribute='ip_address') | list }}
+    vm_has_correct_ip: "{{ vm_network_info.json.ip_address | default('') == config_vm_network_start_ip }}"
+    vm_has_any_ip: "{{ vm_network_info.json.ip_address | default('') | length > 0 }}"
   when:
     - not ansible_check_mode
     - vm_network_info is defined
-    - vm_network_info.json is defined
-
-- name: "Set VM IP status facts"
-  ansible.builtin.set_fact:
-    vm_has_correct_ip: "{{ config_vm_network_start_ip in _all_ips | default([]) }}"
-    vm_has_any_ip: "{{ _all_ips | default([]) | length > 0 }}"
-  when:
-    - not ansible_check_mode
-    - _all_ips is defined
 
 - name: "Display IP check result"
   ansible.builtin.debug:
@@ -82,11 +67,11 @@
       - "VM Network Configuration Status"
       - "========================================="
       - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "Reported IPs: {{ _all_ips | default(['None']) }}"
+      - "Actual IP: {{ vm_network_info.json.ip_address | default('No IP assigned') }}"
       - "Network: {{ config_vm_network }}"
       - "Gateway: {{ config_vm_network_gateway }}"
       - "Netmask: {{ config_vm_network_netmask }}"
       - "DNS: {{ config_vm_network_dns_servers }}"
-      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('HAS IP' if vm_has_any_ip | default(false) else 'NO IP') }}"
+      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP') }}"
       - "========================================="
   when: not ansible_check_mode
