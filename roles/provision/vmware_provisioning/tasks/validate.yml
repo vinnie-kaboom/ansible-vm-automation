@@ -107,6 +107,70 @@
     - conflicting_vms is defined
     - conflicting_vms | length > 0
 
+# TEMPORARY DIAGNOSTIC - remove after confirming template location
+- name: "DIAG: List legacy VM templates"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.type=TEMPLATE"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: diag_legacy_templates
+  delegate_to: localhost
+  failed_when: false
+  when:
+    - vcenter_session is defined
+    - not vcenter_session.failed | default(true)
+
+- name: "DIAG: Show legacy templates"
+  ansible.builtin.debug:
+    msg: "Legacy templates: {{ diag_legacy_templates.json | default([]) | map(attribute='name') | list }}"
+  when: diag_legacy_templates is defined
+
+- name: "DIAG: List content libraries"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: diag_libraries
+  delegate_to: localhost
+  failed_when: false
+  when:
+    - vcenter_session is defined
+    - not vcenter_session.failed | default(true)
+
+- name: "DIAG: Show content library IDs"
+  ansible.builtin.debug:
+    msg: "Content library IDs: {{ diag_libraries.json | default([]) }}"
+  when: diag_libraries is defined
+
+- name: "DIAG: List items in each content library"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library/item?library_id={{ item }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: diag_library_items
+  delegate_to: localhost
+  loop: "{{ diag_libraries.json | default([]) }}"
+  failed_when: false
+  when:
+    - diag_libraries is defined
+    - diag_libraries.json | default([]) | length > 0
+
+- name: "DIAG: Show content library item IDs"
+  ansible.builtin.debug:
+    msg: "Library {{ item.item }}: {{ item.json | default([]) }}"
+  loop: "{{ diag_library_items.results | default([]) }}"
+  when: diag_library_items is defined
+# END TEMPORARY DIAGNOSTIC
+
 - name: "Validate network configuration"
   ansible.builtin.assert:
     that:
