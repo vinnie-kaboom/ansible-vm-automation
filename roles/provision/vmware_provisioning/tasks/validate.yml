@@ -42,9 +42,11 @@
   when: config_vm_network_start_ip is defined
   no_log: true
 
-- name: "Check if VM name already exists in vCenter"
+# filter.names query param is not supported on all vCenter versions.
+# Fetch all VMs and filter by name client-side.
+- name: "List all VMs in vCenter"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"

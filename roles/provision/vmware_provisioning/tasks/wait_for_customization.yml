@@ -3,10 +3,11 @@
 # No aiohttp, pyvmomi, or vSphere Automation SDK required.
 # vcenter_session and vm_moid are set by create_vm.yml earlier in the same role run.
 
-# Poll until VM reports POWERED_ON via the list endpoint.
+# Poll the VM power state directly via its MOID - avoids filter.names which
+# is not supported on all vCenter versions.
 - name: "Wait for VM to be powered on"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_moid }}/power"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -14,11 +15,14 @@
     status_code: 200
   register: vm_power_check
   until: >
-    vm_power_check.json | default([]) | length > 0 and
-    vm_power_check.json[0].power_state == "POWERED_ON"
+    vm_power_check.json is defined and
+    vm_power_check.json.state is defined and
+    vm_power_check.json.state == "POWERED_ON"
   retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - vm_moid is defined
   delegate_to: localhost
   failed_when: false
 

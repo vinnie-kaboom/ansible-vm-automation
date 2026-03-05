@@ -27,21 +27,25 @@
           delegate_to: localhost
           no_log: true
 
-        - name: "Get VM info"
+        - name: "List all VMs to find target"
           ansible.builtin.uri:
-            url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+            url: "https://{{ vcenter_host }}/api/vcenter/vm"
             method: GET
             headers:
               vmware-api-session-id: "{{ cleanup_session.json }}"
             validate_certs: "{{ vcenter_validate_certs }}"
             status_code: 200
-          register: vm_info
+          register: all_vms_cleanup
           delegate_to: localhost
           ignore_errors: true
 
+        - name: "Find VM by name"
+          ansible.builtin.set_fact:
+            vm_info: "{{ all_vms_cleanup.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
+
         - name: "Power off VM if running"
           ansible.builtin.uri:
-            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info.json[0].vm }}/power?action=stop"
+            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info[0].vm }}/power?action=stop"
             method: POST
             headers:
               vmware-api-session-id: "{{ cleanup_session.json }}"
@@ -50,12 +54,12 @@
           delegate_to: localhost
           ignore_errors: true
           when:
-            - vm_info.json | default([]) | length > 0
-            - vm_info.json[0].power_state == "POWERED_ON"
+            - vm_info | default([]) | length > 0
+            - vm_info[0].power_state == "POWERED_ON"
 
         - name: "Remove VM"
           ansible.builtin.uri:
-            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info.json[0].vm }}"
+            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info[0].vm }}"
             method: DELETE
             headers:
               vmware-api-session-id: "{{ cleanup_session.json }}"
@@ -64,6 +68,6 @@
           delegate_to: localhost
           ignore_errors: true
           when:
-            - vm_info.json | default([]) | length > 0
+            - vm_info | default([]) | length > 0
 
       when: cleanup_on_failure | bool

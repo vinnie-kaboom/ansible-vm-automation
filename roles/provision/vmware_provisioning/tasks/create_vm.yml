@@ -23,25 +23,33 @@
   no_log: true
   when: not ansible_check_mode
 
-# Returns [] if VM does not exist, [{"vm": "vm-123", ...}] if it does.
-- name: "Check if VM already exists"
+# filter.names query param is not supported on all vCenter versions.
+# Fetch all VMs and filter by name client-side.
+- name: "List all VMs in vCenter"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: existing_vm_check
+  register: all_vms_list
   delegate_to: localhost
   when: not ansible_check_mode
+
+- name: "Find existing VM by name"
+  ansible.builtin.set_fact:
+    existing_vm_check: "{{ all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
+  when:
+    - not ansible_check_mode
+    - all_vms_list is defined
 
 - name: "Display existing VM status"
   ansible.builtin.debug:
     msg:
       - "VM {{ config_vm_name }} existence check:"
-      - "Exists: {{ (existing_vm_check.json | default([]) | length) > 0 }}"
-      - "Power State: {{ existing_vm_check.json[0].power_state | default('N/A') }}"
+      - "Exists: {{ (existing_vm_check | default([]) | length) > 0 }}"
+      - "Power State: {{ existing_vm_check[0].power_state | default('N/A') }}"
   when:
     - not ansible_check_mode
     - existing_vm_check is defined
@@ -66,7 +74,7 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - existing_vm_check.json | default([]) | length == 0
+    - existing_vm_check | default([]) | length == 0
     - config_vcenter_resource_pool | default('') == ''
 
 - name: "Clone VM from template (resource pool placement)"
@@ -86,19 +94,19 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - existing_vm_check.json | default([]) | length == 0
+    - existing_vm_check | default([]) | length == 0
     - config_vcenter_resource_pool | default('') != ''
 
-# Look up the new VM's MOID for the customization API call.
-- name: "Look up VM MOID"
+# Reuse the all_vms_list fetched earlier; re-query if the VM was just created.
+- name: "Refresh VM list to get MOID of newly created VM"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: vm_moid_lookup
+  register: all_vms_list
   delegate_to: localhost
   when:
     - not ansible_check_mode
@@ -107,11 +115,11 @@
 
 - name: "Set VM MOID fact"
   ansible.builtin.set_fact:
-    vm_moid: "{{ vm_moid_lookup.json[0].vm }}"
+    vm_moid: "{{ (all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list)[0].vm }}"
   when:
     - not ansible_check_mode
-    - vm_moid_lookup is defined
-    - vm_moid_lookup.json | default([]) | length > 0
+    - all_vms_list is defined
+    - all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list | length > 0
 
 # Apply Linux OS customization (hostname, domain, DNS) before first power-on.
 - name: "Apply Linux guest customization"

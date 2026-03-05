@@ -1,5 +1,6 @@
 ---
 # Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
+# filter.names is not supported on all vCenter versions; fetch all and filter client-side.
 
 - name: "Authenticate to vCenter REST API"
   ansible.builtin.uri:
@@ -37,15 +38,15 @@
   when: vcenter_validation_check_api_version | default(true) | bool
   tags: [vcenter, permissions, api_version]
 
-- name: "Check datacenter access"
+- name: "List all datacenters"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/datacenter?filter.names={{ config_vcenter_datacenter | default('') | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/datacenter"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: datacenter_access
+  register: datacenter_list
   delegate_to: localhost
   when: vcenter_validation_check_datacenter_access | default(true) | bool
   tags: [vcenter, permissions, datacenter]
@@ -53,23 +54,23 @@
 - name: "Validate datacenter access"
   assert:
     that:
-      - datacenter_access.json | default([]) | length > 0
+      - datacenter_list.json | default([]) | selectattr('name', 'equalto', config_vcenter_datacenter) | list | length > 0
     fail_msg: "Datacenter '{{ config_vcenter_datacenter }}' not found or not accessible."
     success_msg: "Datacenter access verified successfully"
   when:
     - vcenter_validation_check_datacenter_access | default(true) | bool
-    - datacenter_access is not skipped
+    - datacenter_list is not skipped
   tags: [vcenter, permissions, datacenter]
 
-- name: "Check cluster access"
+- name: "List all clusters"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/cluster?filter.names={{ config_vcenter_cluster | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/cluster"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: cluster_access
+  register: cluster_list
   delegate_to: localhost
   when: vcenter_validation_check_cluster_access | default(true) | bool
   tags: [vcenter, permissions, cluster]
@@ -77,23 +78,23 @@
 - name: "Validate cluster access"
   assert:
     that:
-      - cluster_access.json | default([]) | length > 0
+      - cluster_list.json | default([]) | selectattr('name', 'equalto', config_vcenter_cluster) | list | length > 0
     fail_msg: "Cluster '{{ config_vcenter_cluster }}' not found or not accessible."
     success_msg: "Cluster access verified successfully"
   when:
     - vcenter_validation_check_cluster_access | default(true) | bool
-    - cluster_access is not skipped
+    - cluster_list is not skipped
   tags: [vcenter, permissions, cluster]
 
-- name: "Check datastore access"
+- name: "List all datastores"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/datastore?filter.names={{ config_vcenter_datastore | default('') | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/datastore"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: datastore_access
+  register: datastore_list
   delegate_to: localhost
   when: config_vcenter_datastore | default('') != ''
   tags: [vcenter, permissions, datastore]
@@ -101,10 +102,10 @@
 - name: "Validate datastore access"
   assert:
     that:
-      - datastore_access.json | default([]) | length > 0
+      - datastore_list.json | default([]) | selectattr('name', 'equalto', config_vcenter_datastore) | list | length > 0
     fail_msg: "Datastore '{{ config_vcenter_datastore }}' not found or not accessible."
     success_msg: "Datastore access verified successfully"
   when:
     - config_vcenter_datastore | default('') != ''
-    - datastore_access is not skipped
+    - datastore_list is not skipped
   tags: [vcenter, permissions, datastore]
