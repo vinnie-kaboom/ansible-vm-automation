@@ -1,70 +1,46 @@
 ---
-# Uses vmware.vmware_rest collection (ee-supported-rhel9)
-# vmware.vmware.guest_info requires vSphere Automation SDK which is not on the runner.
-# vmware_rest modules use aiohttp (REST) which is available in the EE.
+# Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
+# Session token passed in from create_vm.yml via vcenter_session variable.
 
-# Poll until VM is powered on - vcenter_vm_info returns power_state directly.
+# Poll until VM is powered on.
 - name: "Wait for VM to be powered on"
-  vmware.vmware_rest.vcenter_vm_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-    filter_names:
-      - "{{ config_vm_name }}"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
   register: vm_power_check
   until: >
-    vm_power_check.value | default([]) | length > 0 and
-    vm_power_check.value[0].power_state == "POWERED_ON"
+    vm_power_check.json | default([]) | length > 0 and
+    vm_power_check.json[0].power_state == "POWERED_ON"
   retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
   when: not ansible_check_mode
   delegate_to: localhost
-  connection: local
   failed_when: false
 
-# Poll VMware Tools status via vcenter_vm_tools_info.
-- name: "Wait for VMware Tools to become available"
-  vmware.vmware_rest.vcenter_vm_tools_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-    vm: "{{ vm_power_check.value[0].vm }}"
-  register: vmtools_wait
-  until: >
-    vmtools_wait.value is defined and
-    vmtools_wait.value.run_state is defined and
-    vmtools_wait.value.run_state == "RUNNING"
-  retries: "{{ config_vm_max_retries | default(3) | int }}"
-  delay: "{{ config_vm_retry_delay | default(10) | int }}"
-  when:
-    - not ansible_check_mode
-    - vm_power_check.value | default([]) | length > 0
-  delegate_to: localhost
-  connection: local
-  failed_when: false
-
-# Poll guest networking info until the expected IP appears.
+# Poll guest networking until expected IP appears.
 - name: "Wait for VM to obtain correct IP address"
-  vmware.vmware_rest.vcenter_vm_guest_networking_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-    vm: "{{ vm_power_check.value[0].vm }}"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/networking"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
   register: vm_network_info
   until: >
-    vm_network_info.value is defined and
-    vm_network_info.value.ip_address is defined and
-    vm_network_info.value.ip_address == config_vm_network_start_ip
+    vm_network_info.json is defined and
+    vm_network_info.json.ip_address is defined and
+    vm_network_info.json.ip_address == config_vm_network_start_ip
   retries: 20
   delay: 15
   when:
     - not ansible_check_mode
-    - vm_power_check.value | default([]) | length > 0
+    - vm_creation.json is defined
   delegate_to: localhost
-  connection: local
   failed_when: false
 
 - name: "Post-customization wait for network stack to stabilize"
@@ -74,21 +50,11 @@
 
 - name: "Set IP check facts"
   ansible.builtin.set_fact:
-    vm_has_correct_ip: "{{ vm_network_info.value.ip_address | default('') == config_vm_network_start_ip }}"
-    vm_has_any_ip: "{{ vm_network_info.value.ip_address | default('') | length > 0 }}"
+    vm_has_correct_ip: "{{ vm_network_info.json.ip_address | default('') == config_vm_network_start_ip }}"
+    vm_has_any_ip: "{{ vm_network_info.json.ip_address | default('') | length > 0 }}"
   when:
     - not ansible_check_mode
     - vm_network_info is defined
-
-- name: "Display VM network information"
-  ansible.builtin.debug:
-    msg:
-      - "VM Name: {{ config_vm_name }}"
-      - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "VM IP from Tools: {{ vm_network_info.value.ip_address | default('Not yet assigned') }}"
-      - "Tools Run State: {{ vmtools_wait.value.run_state | default('Unknown') }}"
-      - "Power State: {{ vm_power_check.value[0].power_state | default('Unknown') }}"
-  when: not ansible_check_mode
 
 - name: "Display IP check result"
   ansible.builtin.debug:
@@ -97,11 +63,11 @@
       - "VM Network Configuration Status"
       - "========================================="
       - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "Actual IP: {{ vm_network_info.value.ip_address | default('No IP assigned') }}"
+      - "Actual IP: {{ vm_network_info.json.ip_address | default('No IP assigned') }}"
       - "Network: {{ config_vm_network }}"
       - "Gateway: {{ config_vm_network_gateway }}"
       - "Netmask: {{ config_vm_network_netmask }}"
       - "DNS: {{ config_vm_network_dns_servers }}"
-      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP - Network customization may have failed') }}"
+      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP') }}"
       - "========================================="
   when: not ansible_check_mode

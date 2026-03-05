@@ -2,7 +2,7 @@
 # ===================================================================================
 # PLAYBOOK: Error Handling and Cleanup
 # ===================================================================================
-# Checks VM state in vCenter, powers off if needed, and removes it.
+# Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
 # ===================================================================================
 
 - name: "Error Handling and Cleanup"
@@ -14,43 +14,56 @@
   tasks:
     - name: "Check if cleanup is needed"
       block:
+        - name: "Authenticate to vCenter REST API"
+          ansible.builtin.uri:
+            url: "https://{{ vcenter_host }}/api/session"
+            method: POST
+            user: "{{ vcenter_user }}"
+            password: "{{ vcenter_user_password }}"
+            force_basic_auth: true
+            validate_certs: "{{ vcenter_validate_certs }}"
+            status_code: 201
+          register: cleanup_session
+          delegate_to: localhost
+          no_log: true
+
         - name: "Get VM info"
-          vmware.vmware_rest.vcenter_vm_info:
-            vcenter_hostname: "{{ vcenter_host }}"
-            vcenter_username: "{{ vcenter_user }}"
-            vcenter_password: "{{ vcenter_user_password }}"
-            vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-            filter_names:
-              - "{{ config_vm_name }}"
-          register: vm_power_info
+          ansible.builtin.uri:
+            url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+            method: GET
+            headers:
+              vmware-api-session-id: "{{ cleanup_session.json }}"
+            validate_certs: "{{ vcenter_validate_certs }}"
+            status_code: 200
+          register: vm_info
+          delegate_to: localhost
           ignore_errors: true
 
         - name: "Power off VM if running"
-          vmware.vmware.vm_powerstate:
-            hostname: "{{ vcenter_host }}"
-            username: "{{ vcenter_user }}"
-            password: "{{ vcenter_user_password }}"
+          ansible.builtin.uri:
+            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info.json[0].vm }}/power?action=stop"
+            method: POST
+            headers:
+              vmware-api-session-id: "{{ cleanup_session.json }}"
             validate_certs: "{{ vcenter_validate_certs }}"
-            name: "{{ config_vm_name }}"
-            datacenter: "{{ config_vcenter_datacenter }}"
-            state: powered-off
-          when:
-            - not vm_power_info.failed | default(true)
-            - vm_power_info.value | default([]) | length > 0
+            status_code: 204
+          delegate_to: localhost
           ignore_errors: true
+          when:
+            - vm_info.json | default([]) | length > 0
+            - vm_info.json[0].power_state == "POWERED_ON"
 
-        # vcenter_vm requires the VM MOID from vcenter_vm_info value[0].vm
         - name: "Remove VM"
-          vmware.vmware_rest.vcenter_vm:
-            vcenter_hostname: "{{ vcenter_host }}"
-            vcenter_username: "{{ vcenter_user }}"
-            vcenter_password: "{{ vcenter_user_password }}"
-            vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-            vm: "{{ vm_power_info.value[0].vm }}"
-            state: absent
-          when:
-            - not vm_power_info.failed | default(true)
-            - vm_power_info.value | default([]) | length > 0
+          ansible.builtin.uri:
+            url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_info.json[0].vm }}"
+            method: DELETE
+            headers:
+              vmware-api-session-id: "{{ cleanup_session.json }}"
+            validate_certs: "{{ vcenter_validate_certs }}"
+            status_code: 204
+          delegate_to: localhost
           ignore_errors: true
+          when:
+            - vm_info.json | default([]) | length > 0
 
       when: cleanup_on_failure | bool

@@ -1,111 +1,110 @@
 ---
-# Uses vmware.vmware and vmware.vmware_rest collections (ee-supported-rhel9)
+# Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
+
+- name: "Authenticate to vCenter REST API"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/session"
+    method: POST
+    user: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    force_basic_auth: true
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 201
+  register: vcenter_session
+  delegate_to: localhost
+  no_log: true
+  tags: [vcenter, permissions]
 
 - name: "Check vCenter API version"
-  vmware.vmware_rest.vcenter_about_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-  delegate_to: localhost
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/system/version"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
   register: vcenter_info
-  tags:
-    - vcenter
-    - permissions
-    - api_version
+  delegate_to: localhost
+  tags: [vcenter, permissions, api_version]
 
 - name: "Validate vCenter API version"
   assert:
     that:
-      - vcenter_info.value.api_version is defined
-      - vcenter_info.value.api_version is version('6.7', '>=')
-    fail_msg: "vCenter API version {{ vcenter_info.value.api_version }} is below minimum required version 6.7"
-    success_msg: "vCenter API version {{ vcenter_info.value.api_version }} meets minimum requirements"
+      - vcenter_info.json.version is defined
+      - vcenter_info.json.version is version('6.7', '>=')
+    fail_msg: "vCenter version {{ vcenter_info.json.version }} is below minimum required 6.7"
+    success_msg: "vCenter version {{ vcenter_info.json.version }} meets minimum requirements"
   when: vcenter_validation_check_api_version | default(true) | bool
-  register: api_check
-  tags:
-    - vcenter
-    - permissions
-    - api_version
+  tags: [vcenter, permissions, api_version]
 
-- name: "Check datacenter access permissions"
-  vmware.vmware_rest.vcenter_datacenter_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-    filter_names:
-      - "{{ config_vcenter_datacenter | default('') }}"
-  delegate_to: localhost
+- name: "Check datacenter access"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/datacenter?filter.names={{ config_vcenter_datacenter | default('') | urlencode }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
   register: datacenter_access
-  ignore_errors: false
+  delegate_to: localhost
   when: vcenter_validation_check_datacenter_access | default(true) | bool
-  tags:
-    - vcenter
-    - permissions
-    - datacenter
+  tags: [vcenter, permissions, datacenter]
 
 - name: "Validate datacenter access"
-  debug:
-    msg: "Datacenter access verified successfully"
+  assert:
+    that:
+      - datacenter_access.json | default([]) | length > 0
+    fail_msg: "Datacenter '{{ config_vcenter_datacenter }}' not found or not accessible."
+    success_msg: "Datacenter access verified successfully"
   when:
     - vcenter_validation_check_datacenter_access | default(true) | bool
     - datacenter_access is not skipped
-  tags:
-    - vcenter
-    - permissions
-    - datacenter
+  tags: [vcenter, permissions, datacenter]
 
-- name: "Check cluster access permissions"
-  vmware.vmware.cluster_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
+- name: "Check cluster access"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/cluster?filter.names={{ config_vcenter_cluster | urlencode }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
-    datacenter: "{{ config_vcenter_datacenter | default('') }}"
-    cluster_name: "{{ config_vcenter_cluster }}"
+    status_code: 200
   register: cluster_access
-  ignore_errors: false
+  delegate_to: localhost
   when: vcenter_validation_check_cluster_access | default(true) | bool
-  tags:
-    - vcenter
-    - permissions
-    - cluster
+  tags: [vcenter, permissions, cluster]
 
 - name: "Validate cluster access"
-  debug:
-    msg: "Cluster access verified successfully"
+  assert:
+    that:
+      - cluster_access.json | default([]) | length > 0
+    fail_msg: "Cluster '{{ config_vcenter_cluster }}' not found or not accessible."
+    success_msg: "Cluster access verified successfully"
   when:
     - vcenter_validation_check_cluster_access | default(true) | bool
     - cluster_access is not skipped
-  tags:
-    - vcenter
-    - permissions
-    - cluster
+  tags: [vcenter, permissions, cluster]
 
-- name: "Check datastore access permissions"
-  vmware.vmware_rest.vcenter_datastore_info:
-    vcenter_hostname: "{{ vcenter_host }}"
-    vcenter_username: "{{ vcenter_user }}"
-    vcenter_password: "{{ vcenter_user_password }}"
-    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
-    filter_names:
-      - "{{ config_vcenter_datastore | default('') }}"
+- name: "Check datastore access"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/datastore?filter.names={{ config_vcenter_datastore | default('') | urlencode }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
   register: datastore_access
-  ignore_errors: false
+  delegate_to: localhost
   when: config_vcenter_datastore | default('') != ''
-  tags:
-    - vcenter
-    - permissions
-    - datastore
+  tags: [vcenter, permissions, datastore]
 
 - name: "Validate datastore access"
-  debug:
-    msg: "Datastore access verified successfully"
+  assert:
+    that:
+      - datastore_access.json | default([]) | length > 0
+    fail_msg: "Datastore '{{ config_vcenter_datastore }}' not found or not accessible."
+    success_msg: "Datastore access verified successfully"
   when:
     - config_vcenter_datastore | default('') != ''
     - datastore_access is not skipped
-  tags:
-    - vcenter
-    - permissions
-    - datastore
+  tags: [vcenter, permissions, datastore]

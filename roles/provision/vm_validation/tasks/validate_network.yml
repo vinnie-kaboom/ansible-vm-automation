@@ -1,21 +1,34 @@
 ---
 - name: "Run network validation with error handling"
   block:
+    - name: "Authenticate to vCenter REST API"
+      ansible.builtin.uri:
+        url: "https://{{ vcenter_host }}/api/session"
+        method: POST
+        user: "{{ vcenter_user }}"
+        password: "{{ vcenter_user_password }}"
+        force_basic_auth: true
+        validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+        status_code: 201
+      register: net_session
+      delegate_to: localhost
+      no_log: true
+
     - name: "Get vCenter network list"
-      vmware.vmware_rest.vcenter_network_info:
-        vcenter_hostname: "{{ vcenter_host }}"
-        vcenter_username: "{{ vcenter_user }}"
-        vcenter_password: "{{ vcenter_user_password }}"
-        vcenter_validate_certs: "{{ vcenter_validate_certs | default(false) }}"
-        filter_names:
-          - "{{ config_vm_network }}"
+      ansible.builtin.uri:
+        url: "https://{{ vcenter_host }}/api/vcenter/network?filter.names={{ config_vm_network | urlencode }}"
+        method: GET
+        headers:
+          vmware-api-session-id: "{{ net_session.json }}"
+        validate_certs: "{{ vcenter_validate_certs | default(false) }}"
+        status_code: 200
       delegate_to: localhost
       register: network_info
 
     - name: "Validate that network exists in vCenter"
       ansible.builtin.assert:
         that:
-          - network_info.value | default([]) | length > 0
+          - network_info.json | default([]) | length > 0
         fail_msg: "Network '{{ config_vm_network }}' was not found in vCenter datacenter '{{ config_vcenter_datacenter }}'."
         success_msg: "Network '{{ config_vm_network }}' exists in vCenter datacenter '{{ config_vcenter_datacenter }}'."
 
