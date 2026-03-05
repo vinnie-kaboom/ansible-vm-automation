@@ -31,11 +31,11 @@
     - always
 
 - name: "Query all VMs in vCenter to check for IP conflicts"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
+  vmware.vmware_rest.vcenter_vm_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
   when: config_vm_network_start_ip is defined
   delegate_to: localhost
   ignore_errors: true
@@ -62,13 +62,16 @@
     - validation
     - always
 
+# vcenter_vm_info (REST) does not return guest IP addresses - that requires
+# VMware Tools to be running and a separate guest details call.
+# Check for name conflict only (duplicate VM name in vCenter).
 - name: "Check if any VM is already using the target IP"
   ansible.builtin.set_fact:
-    conflicting_vms: "{{ all_vms_info.guests | default([]) | selectattr('ipv4', 'defined') | selectattr('ipv4', 'equalto', config_vm_network_start_ip) | list }}"
+    conflicting_vms: "{{ all_vms_info.value | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
   when:
     - all_vms_info is defined
-    - all_vms_info.guests is defined
-    - config_vm_network_start_ip is defined
+    - all_vms_info.value is defined
+    - config_vm_name is defined
 
 # Validate domain name format
 - name: "Validate domain name format"
@@ -89,8 +92,8 @@
     msg:
       - "⚠️  WARNING: IP address {{ config_vm_network_start_ip }} is already assigned to another VM in vCenter!"
       - "Target VM: {{ config_vm_name }}"
-      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='hw_name') | list }}"
-      - "Power State(s): {{ conflicting_vms | map(attribute='hw_power_status') | list }}"
+      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='name') | list }}"
+      - "Power State(s): {{ conflicting_vms | map(attribute='power_state') | list }}"
       - "This WILL cause guest customization to fail on the new VM."
       - "Action required:"
       - "  - Change the IP address in inventory for {{ config_vm_name }}"

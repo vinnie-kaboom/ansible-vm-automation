@@ -1,46 +1,21 @@
 ---
-# Uses vmware.vmware collection (ee-supported-rhel9)
-# vmware.vmware.guest_info returns guests[] list; use guests[0] for single-VM queries.
-# vmware_guest_tools_wait has no direct equivalent - poll guest_info until tools running.
+# Uses vmware.vmware_rest collection (ee-supported-rhel9)
+# vmware.vmware.guest_info requires vSphere Automation SDK which is not on the runner.
+# vmware_rest modules use aiohttp (REST) which is available in the EE.
 
-- name: "Wait for VMware Tools to become available"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-  register: vmtools_wait
+# Poll until VM is powered on - vcenter_vm_info returns power_state directly.
+- name: "Wait for VM to be powered on"
+  vmware.vmware_rest.vcenter_vm_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    filter_names:
+      - "{{ config_vm_name }}"
+  register: vm_power_check
   until: >
-    vmtools_wait.guests | default([]) | length > 0 and
-    vmtools_wait.guests[0].guest_tools_status is defined and
-    vmtools_wait.guests[0].guest_tools_status == "guestToolsRunning"
-  retries: "{{ config_vm_max_retries | default(3) | int }}"
-  delay: "{{ config_vm_retry_delay | default(10) | int }}"
-  when: not ansible_check_mode
-  delegate_to: localhost
-  connection: local
-  failed_when: false
-
-- name: "Wait for guest OS customization to complete"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-  register: vm_info
-  until: >
-    vm_info.guests | default([]) | length > 0 and
-    vm_info.guests[0].hw_power_status is defined and
-    vm_info.guests[0].hw_power_status == "poweredOn" and
-    vm_info.guests[0].guest_tools_status is defined and
-    vm_info.guests[0].guest_tools_status == "guestToolsRunning" and
-    (vm_info.guests[0].customization_info is not defined or
-     vm_info.guests[0].customization_info.status is not defined or
-     vm_info.guests[0].customization_info.status != "TOOLSDEPLOYPKG_RUNNING")
+    vm_power_check.value | default([]) | length > 0 and
+    vm_power_check.value[0].power_state == "POWERED_ON"
   retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
   when: not ansible_check_mode
@@ -48,23 +23,46 @@
   connection: local
   failed_when: false
 
-- name: "Wait for VM to obtain correct IP address"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-  register: vm_info
+# Poll VMware Tools status via vcenter_vm_tools_info.
+- name: "Wait for VMware Tools to become available"
+  vmware.vmware_rest.vcenter_vm_tools_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ vm_power_check.value[0].vm }}"
+  register: vmtools_wait
   until: >
-    vm_info.guests | default([]) | length > 0 and
-    vm_info.guests[0].ipv4 is defined and
-    vm_info.guests[0].ipv4 is not none and
-    vm_info.guests[0].ipv4 == config_vm_network_start_ip
+    vmtools_wait.value is defined and
+    vmtools_wait.value.run_state is defined and
+    vmtools_wait.value.run_state == "RUNNING"
+  retries: "{{ config_vm_max_retries | default(3) | int }}"
+  delay: "{{ config_vm_retry_delay | default(10) | int }}"
+  when:
+    - not ansible_check_mode
+    - vm_power_check.value | default([]) | length > 0
+  delegate_to: localhost
+  connection: local
+  failed_when: false
+
+# Poll guest networking info until the expected IP appears.
+- name: "Wait for VM to obtain correct IP address"
+  vmware.vmware_rest.vcenter_vm_guest_networking_info:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ vm_power_check.value[0].vm }}"
+  register: vm_network_info
+  until: >
+    vm_network_info.value is defined and
+    vm_network_info.value.ip_address is defined and
+    vm_network_info.value.ip_address == config_vm_network_start_ip
   retries: 20
   delay: 15
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - vm_power_check.value | default([]) | length > 0
   delegate_to: localhost
   connection: local
   failed_when: false
@@ -74,90 +72,23 @@
     seconds: "{{ config_vm_post_boot_wait | default(30) | int }}"
   when: not ansible_check_mode
 
-- name: "Check if customization failed"
+- name: "Set IP check facts"
   ansible.builtin.set_fact:
-    customization_failed: true
+    vm_has_correct_ip: "{{ vm_network_info.value.ip_address | default('') == config_vm_network_start_ip }}"
+    vm_has_any_ip: "{{ vm_network_info.value.ip_address | default('') | length > 0 }}"
   when:
     - not ansible_check_mode
-    - vm_info.guests | default([]) | length > 0
-    - vm_info.guests[0].customization_info is defined
-    - vm_info.guests[0].customization_info.status is defined
-    - vm_info.guests[0].customization_info.status == "TOOLSDEPLOYPKG_IDLE"
+    - vm_network_info is defined
 
-# vmware_guest_file_operation has no equivalent in vmware.vmware - use ansible.builtin.fetch
-# via SSH instead. Log retrieval is best-effort; failure is non-fatal.
-- name: "Retrieve customization log file from VM"
-  ansible.builtin.fetch:
-    src: "/var/log/vmware-imc/toolsDeployPkg.log"
-    dest: "/tmp/{{ config_vm_name }}_toolsDeployPkg.log"
-    flat: true
-  delegate_to: "{{ config_vm_network_start_ip }}"
-  register: log_fetch
-  ignore_errors: true
-  when:
-    - not ansible_check_mode
-    - customization_failed | default(false)
-
-- name: "Display customization log contents"
-  ansible.builtin.command:
-    cmd: "cat /tmp/{{ config_vm_name }}_toolsDeployPkg.log"
-  register: log_contents
-  delegate_to: localhost
-  ignore_errors: true
-  when:
-    - not ansible_check_mode
-    - customization_failed | default(false)
-    - log_fetch is succeeded
-
-- name: "Show customization error details"
-  ansible.builtin.debug:
-    msg:
-      - "========================================="
-      - "CUSTOMIZATION FAILED FOR {{ config_vm_name }}"
-      - "========================================="
-      - "Customization Status: {{ vm_info.guests[0].customization_info.status | default('Unknown') }}"
-      - "Error Message: {{ vm_info.guests[0].customization_info.errorMessage | default('No error message') }}"
-      - ""
-      - "Log file contents from /var/log/vmware-imc/toolsDeployPkg.log:"
-      - "{{ log_contents.stdout_lines | default(['Could not retrieve log file']) }}"
-      - "========================================="
-  when:
-    - not ansible_check_mode
-    - customization_failed | default(false)
-
-- name: "Get detailed VM network information"
-  vmware.vmware.guest_info:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    schema: vsphere
-  register: vm_detailed_info
-  when: not ansible_check_mode
-  delegate_to: localhost
-  connection: local
-
-- name: "Display VM network information from VMware Tools"
+- name: "Display VM network information"
   ansible.builtin.debug:
     msg:
       - "VM Name: {{ config_vm_name }}"
       - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "VM IP from Tools: {{ vm_info.guests[0].ipv4 | default('Not yet assigned') }}"
-      - "All IPs: {{ vm_detailed_info.guests[0].guest.ipAddress | default('None') }}"
-      - "Guest Tools Status: {{ vm_info.guests[0].guest_tools_status | default('Unknown') }}"
-      - "Power Status: {{ vm_info.guests[0].hw_power_status | default('Unknown') }}"
-      - "Guest OS: {{ vm_detailed_info.guests[0].guest.guestId | default('Unknown') }}"
+      - "VM IP from Tools: {{ vm_network_info.value.ip_address | default('Not yet assigned') }}"
+      - "Tools Run State: {{ vmtools_wait.value.run_state | default('Unknown') }}"
+      - "Power State: {{ vm_power_check.value[0].power_state | default('Unknown') }}"
   when: not ansible_check_mode
-
-- name: "Check if VM has correct IP address"
-  ansible.builtin.set_fact:
-    vm_has_correct_ip: "{{ (vm_info.guests[0].ipv4 is not none) and (vm_info.guests[0].ipv4 == config_vm_network_start_ip) }}"
-    vm_has_any_ip: "{{ (vm_info.guests[0].ipv4 is not none) and (vm_info.guests[0].ipv4 | string | length > 0) }}"
-  when:
-    - not ansible_check_mode
-    - vm_info.guests | default([]) | length > 0
 
 - name: "Display IP check result"
   ansible.builtin.debug:
@@ -166,12 +97,11 @@
       - "VM Network Configuration Status"
       - "========================================="
       - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "Actual IP: {{ vm_info.guests[0].ipv4 | default('No IP assigned') }}"
+      - "Actual IP: {{ vm_network_info.value.ip_address | default('No IP assigned') }}"
       - "Network: {{ config_vm_network }}"
       - "Gateway: {{ config_vm_network_gateway }}"
       - "Netmask: {{ config_vm_network_netmask }}"
       - "DNS: {{ config_vm_network_dns_servers }}"
-      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP - Network customization failed') }}"
-      - "Action: {{ 'Continue' if vm_has_correct_ip | default(false) else 'Will configure network via VMware Tools' }}"
+      - "Status: {{ 'CORRECT' if vm_has_correct_ip | default(false) else ('WRONG IP' if vm_has_any_ip | default(false) else 'NO IP - Network customization may have failed') }}"
       - "========================================="
   when: not ansible_check_mode
