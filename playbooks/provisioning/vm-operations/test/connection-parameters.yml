@@ -5,18 +5,6 @@
   gather_facts: true
   connection: local
 
-  pre_tasks:
-    - name: "Install required Python libraries for VMware modules"
-      ansible.builtin.pip:
-        name:
-          - aiohttp
-          - pyvmomi
-        state: present
-        executable: /usr/bin/pip3
-      delegate_to: localhost
-      become: true
-      run_once: true
-
   roles:
     - role: provision/vcenter_connection
       tags:
