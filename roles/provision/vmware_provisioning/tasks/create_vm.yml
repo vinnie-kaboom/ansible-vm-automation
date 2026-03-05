@@ -58,26 +58,29 @@
 
 # Apply Linux OS customization (hostname, domain, DNS) before first power-on.
 # Network IP config is handled post-boot by configure_guest.yml.
+# vcenter_vm_guest_customization requires the VM MOID from the deploy result.
 - name: "Apply Linux guest customization"
-  vmware.vmware.vm_apply_customization:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    global_dns:
-      servers: "{{ config_vm_network_dns_servers }}"
-      resolution_suffixes:
+  vmware.vmware_rest.vcenter_vm_guest_customization:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ vm_creation.vm.moid }}"
+    configuration_spec:
+      linux_config:
+        hostname:
+          type: FIXED
+          fixed_name: "{{ config_vm_name.split('.')[0] }}"
+        domain: "{{ config_vm_domain }}"
+        time_zone: "America/New_York"
+    global_DNS_settings:
+      dns_suffix_list:
         - "{{ config_vm_domain }}"
-    unix_prep:
-      host_name: "{{ config_vm_name.split('.')[0] }}"
-      domain: "{{ config_vm_domain }}"
-      script_text: ""
-      time_zone: "America/New_York"
-      hardware_clock_utc: true
+      dns_servers: "{{ config_vm_network_dns_servers }}"
+    interfaces: []
   when:
     - not ansible_check_mode
+    - vm_creation.vm is defined
     - config_vm_os is defined
     - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
   delegate_to: localhost
@@ -85,44 +88,54 @@
 
 # Apply Windows sysprep customization before first power-on.
 - name: "Apply Windows guest customization"
-  vmware.vmware.vm_apply_customization:
-    hostname: "{{ vcenter_host }}"
-    username: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    global_dns:
-      servers: "{{ config_vm_network_dns_servers }}"
-      resolution_suffixes:
+  vmware.vmware_rest.vcenter_vm_guest_customization:
+    vcenter_hostname: "{{ vcenter_host }}"
+    vcenter_username: "{{ vcenter_user }}"
+    vcenter_password: "{{ vcenter_user_password }}"
+    vcenter_validate_certs: "{{ vcenter_validate_certs }}"
+    vm: "{{ vm_creation.vm.moid }}"
+    configuration_spec:
+      windows_config:
+        reboot: REBOOT
+        sysprep:
+          user_data:
+            computer_name:
+              type: FIXED
+              fixed_name: "{{ config_vm_name.split('.')[0] }}"
+            full_name: "{{ config_windows_fullname | default('Administrator') }}"
+            org_name: "{{ config_windows_orgname | default('Organization') }}"
+            product_key: ""
+          gui_unattended:
+            auto_logon: "{{ config_windows_autologon | default(false) }}"
+            auto_logon_count: "{{ config_windows_autologon_count | default(1) }}"
+            password: "{{ config_windows_admin_password | default(config_vm_root_password) }}"
+            time_zone: "{{ config_windows_timezone | default(35) }}"
+    global_DNS_settings:
+      dns_suffix_list:
         - "{{ config_vm_domain }}"
-    windows_sysprep:
-      computer_name: "{{ config_vm_name.split('.')[0] }}"
-      full_name: "{{ config_windows_fullname | default('Administrator') }}"
-      org_name: "{{ config_windows_orgname | default('Organization') }}"
-      product_id: ""
-      time_zone: "{{ config_windows_timezone | default(35) }}"
-      auto_logon: "{{ config_windows_autologon | default(false) }}"
-      auto_logon_count: "{{ config_windows_autologon_count | default(1) }}"
-      password: "{{ config_windows_admin_password | default(config_vm_root_password) }}"
+      dns_servers: "{{ config_vm_network_dns_servers }}"
+    interfaces: []
   when:
     - not ansible_check_mode
+    - vm_creation.vm is defined
     - config_vm_os is defined
     - "'Windows' in config_vm_os"
   delegate_to: localhost
   connection: local
 
-# Add creation metadata to VM notes field
+# Add creation metadata to VM notes field via advanced settings.
+# vmware.vmware.vm is not available in v2.3.0; use vm_advanced_settings instead.
 - name: "Update VM annotation"
-  vmware.vmware.vm:
+  vmware.vmware.vm_advanced_settings:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
-    annotation: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
-    state: present
+    settings:
+      - key: "annotation"
+        value: "Created by Ansible on {{ now(utc=true).strftime('%Y-%m-%d') }}"
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
