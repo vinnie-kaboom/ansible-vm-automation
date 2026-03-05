@@ -1,25 +1,15 @@
 ---
-# Maps inventory variables to vmware_guest module parameters
+# Maps inventory variables to vmware.vmware module parameters
 # Higher precedence than defaults/
 
-# Linux guest OS customization (applied when config_vm_os contains "Linux" or "RHEL")
-linux_customization:
-  hostname: "{{ config_vm_name.split('.')[0] }}"      # Short hostname
-  domain: "{{ config_vm_domain }}"
-  dns_servers: "{{ config_vm_network_dns_servers }}"
-  dns_suffix:
-    - "{{ config_vm_domain }}"
-
+# Windows sysprep customization (applied when config_vm_os contains "Windows")
+# Used by vm_apply_customization in create_vm.yml
 windows_customization:
-  hostname: "{{ config_vm_name.split('.')[0] }}"
-  fullname: "{{ config_windows_fullname | default('Administrator') }}"
-  orgname: "{{ config_windows_orgname | default('Organization') }}"
+  computer_name: "{{ config_vm_name.split('.')[0] }}"
+  full_name: "{{ config_windows_fullname | default('Administrator') }}"
+  org_name: "{{ config_windows_orgname | default('Organization') }}"
+  product_id: ""
+  time_zone: "{{ config_windows_timezone | default(35) }}"
+  auto_logon: "{{ config_windows_autologon | default(false) }}"
+  auto_logon_count: "{{ config_windows_autologon_count | default(1) }}"
   password: "{{ config_windows_admin_password | default(config_vm_root_password) }}"
-  autologon: "{{ config_windows_autologon | default(false) }}"
-  autologoncount: "{{ config_windows_autologon_count | default(1) }}"
-  timezone: "{{ config_windows_timezone | default(35) }}"
-  domain: "{{ config_vm_domain }}"
-  domainadmin: "{{ config_windows_domain_admin | default(omit) }}"
-  domainadminpassword: "{{ config_windows_domain_admin_password | default(omit) }}"
-  joindomain: "{{ config_vm_domain if (config_windows_join_domain | default(false)) else omit }}"
-  dns_servers: "{{ config_vm_network_dns_servers }}"

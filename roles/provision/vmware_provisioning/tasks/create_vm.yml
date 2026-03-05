@@ -1,6 +1,7 @@
 ---
 # Creates VM from template with network and OS customization
-# Supports both Linux and Windows with async execution
+# Supports both Linux and Windows
+# Uses vmware.vmware collection (ee-supported-rhel9)
 
 # Dry-run simulation for check mode
 - name: "Clone VM from template (Check Mode)"
@@ -10,7 +11,7 @@
 
 # Query vCenter for VM existence and current state
 - name: "Check if VM already exists"
-  community.vmware.vmware_guest_info:
+  vmware.vmware.guest_info:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
@@ -28,72 +29,92 @@
   ansible.builtin.debug:
     msg:
       - "VM {{ config_vm_name }} existence check:"
-      - "Exists: {{ existing_vm_check.instance is defined }}"
-      - "Power State: {{ existing_vm_check.instance.hw_power_status | default('N/A') }}"
+      - "Exists: {{ (existing_vm_check.guests | default([]) | length) > 0 }}"
+      - "Power State: {{ existing_vm_check.guests[0].hw_power_status | default('N/A') }}"
   when:
     - not ansible_check_mode
     - existing_vm_check is defined
 
-# Clone VM from template with network, hardware, and OS customization
-# Runs async to avoid blocking on long operations
-- name: "Clone VM from template with inline customization"
-  community.vmware.vmware_guest:
+# Clone VM from template located in a vCenter folder.
+# deploy_folder_template is synchronous - no async polling needed.
+- name: "Clone VM from template"
+  vmware.vmware.deploy_folder_template:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
     validate_certs: "{{ vcenter_validate_certs }}"
-    name: "{{ config_vm_name }}"
-    template: "{{ config_vm_template }}"
+    vm_name: "{{ config_vm_name }}"
+    template_name: "{{ config_vm_template }}"
     datacenter: "{{ config_vcenter_datacenter }}"
-    cluster: "{{ config_vcenter_cluster }}"
-    folder: "{{ config_vm_folder }}"
-    datastore: "{{ config_vcenter_datastore }}"
+    cluster: "{{ config_vcenter_cluster | default(omit) }}"
     resource_pool: "{{ config_vcenter_resource_pool | default(omit) }}"
-    state: present
-    networks:
-      - name: "{{ config_vm_network }}"
-        ip: "{{ config_vm_network_start_ip }}"
-        netmask: "{{ config_vm_network_netmask }}"
-        gateway: "{{ config_vm_network_gateway }}"
-        domain: "{{ config_vm_domain }}"
-        dns_servers: "{{ config_vm_network_dns_servers }}"
-        type: "{{ config_vm_network_type | default('static') }}"
-        device_type: "{{ config_vm_network_device_type | default('vmxnet3') }}"
-        start_connected: "{{ config_vm_network_start_connected | default(true) }}"
-    customization: "{{ linux_customization if (config_vm_os is defined and ('Linux' in config_vm_os or 'RHEL' in config_vm_os)) else (windows_customization if (config_vm_os is defined and 'Windows' in config_vm_os) else omit) }}"
-    hardware:
-      memory_mb: "{{ config_vm_memory_mb }}"
-      num_cpus: "{{ config_vm_cpu_count }}"
-      scsi: paravirtual
-    wait_for_customization: false
-    wait_for_ip_address: false
-  async: "{{ vm_async_timeout | default(3600) | int }}"
-  poll: "{{ vm_poll_interval | default(0) | int }}"
+    vm_folder: "{{ config_vm_folder }}"
+    datastore: "{{ config_vcenter_datastore }}"
+    power_on_after_deploy: false
   register: vm_creation
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
 
-# Poll async job until completion or timeout
-# failed_when catches immediate job failures (e.g. missing Python library) so
-# the loop exits on the first poll rather than retrying until timeout.
-- name: "Wait for VM creation to complete"
-  ansible.builtin.async_status:
-    jid: "{{ vm_creation.ansible_job_id }}"
-  register: job_result
-  until: job_result.finished
-  retries: "{{ config_vm_async_retries | int }}"
-  delay: "{{ config_vm_async_delay | int }}"
-  failed_when: job_result.finished and job_result.failed | default(false)
+# Apply Linux OS customization (hostname, domain, DNS) before first power-on.
+# Network IP config is handled post-boot by configure_guest.yml.
+- name: "Apply Linux guest customization"
+  vmware.vmware.vm_apply_customization:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    global_dns:
+      servers: "{{ config_vm_network_dns_servers }}"
+      resolution_suffixes:
+        - "{{ config_vm_domain }}"
+    unix_prep:
+      host_name: "{{ config_vm_name.split('.')[0] }}"
+      domain: "{{ config_vm_domain }}"
+      script_text: ""
+      time_zone: "America/New_York"
+      hardware_clock_utc: true
   when:
     - not ansible_check_mode
-    - vm_creation.ansible_job_id is defined
+    - config_vm_os is defined
+    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+  delegate_to: localhost
+  connection: local
+
+# Apply Windows sysprep customization before first power-on.
+- name: "Apply Windows guest customization"
+  vmware.vmware.vm_apply_customization:
+    hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    name: "{{ config_vm_name }}"
+    datacenter: "{{ config_vcenter_datacenter }}"
+    global_dns:
+      servers: "{{ config_vm_network_dns_servers }}"
+      resolution_suffixes:
+        - "{{ config_vm_domain }}"
+    windows_sysprep:
+      computer_name: "{{ config_vm_name.split('.')[0] }}"
+      full_name: "{{ config_windows_fullname | default('Administrator') }}"
+      org_name: "{{ config_windows_orgname | default('Organization') }}"
+      product_id: ""
+      time_zone: "{{ config_windows_timezone | default(35) }}"
+      auto_logon: "{{ config_windows_autologon | default(false) }}"
+      auto_logon_count: "{{ config_windows_autologon_count | default(1) }}"
+      password: "{{ config_windows_admin_password | default(config_vm_root_password) }}"
+  when:
+    - not ansible_check_mode
+    - config_vm_os is defined
+    - "'Windows' in config_vm_os"
   delegate_to: localhost
   connection: local
 
 # Add creation metadata to VM notes field
 - name: "Update VM annotation"
-  community.vmware.vmware_guest:
+  vmware.vmware.vm:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
@@ -115,65 +136,33 @@
       - "========================================="
       - "VM Name: {{ config_vm_name }}"
       - "Template: {{ config_vm_template }}"
-      - "Status: {{ 'SUCCESS' if (job_result is defined and job_result.finished == 1) else 'FAILED' }}"
-      - "Changed: {{ job_result.changed | default(false) }}"
+      - "Status: {{ 'SUCCESS' if (vm_creation is defined and not vm_creation.failed | default(false)) else 'FAILED' }}"
+      - "Changed: {{ vm_creation.changed | default(false) }}"
       - "Datacenter: {{ config_vcenter_datacenter }}"
       - "Cluster: {{ config_vcenter_cluster }}"
       - "Datastore: {{ config_vcenter_datastore }}"
       - "========================================="
   when:
     - not ansible_check_mode
-    - job_result is defined
+    - vm_creation is defined
 
-# Retrieve detailed error information from async job result file
-- name: "Read async job result file for error details"
-  ansible.builtin.slurp:
-    src: "{{ job_result.results_file }}"
-  register: async_job_details
-  delegate_to: localhost
-  connection: local
-  ignore_errors: true
-  when:
-    - not ansible_check_mode
-    - job_result is defined
-    - job_result.finished != 1
-    - job_result.results_file is defined
-
-# Display detailed error information if job failed
-- name: "Display async job error details"
-  ansible.builtin.debug:
-    msg:
-      - "========================================="
-      - "Async Job Error Details"
-      - "========================================="
-      - "{{ async_job_details.content | b64decode | from_json }}"
-      - "========================================="
-  when:
-    - not ansible_check_mode
-    - async_job_details is defined
-    - async_job_details.content is defined
-
-# Fail playbook if VM creation timed out or failed
+# Fail playbook if VM creation failed
 - name: "Fail if VM creation did not complete"
   ansible.builtin.fail:
     msg: |
-      VM creation failed or timed out after {{ config_vm_async_retries * config_vm_async_delay }} seconds.
-      
+      VM creation failed for {{ config_vm_name }}.
+
       Possible causes:
-      1. vCenter is overloaded or slow
-      2. Datastore has insufficient space or poor performance
-      3. Template is corrupted or missing
-      4. Network connectivity issues to vCenter
-      5. VM already exists and reconfiguration is hanging
-      6. DRS is interfering with VM creation
-      7. Guest customization is hanging (template not properly prepared)
-      
+      1. Template '{{ config_vm_template }}' not found in folder
+      2. Datastore has insufficient space
+      3. Cluster or resource pool not accessible
+      4. VM already exists with conflicting configuration
+
       Check vCenter tasks for VM {{ config_vm_name }} to see actual status.
-      Check the async job details above for specific error messages.
   when:
     - not ansible_check_mode
-    - job_result is defined
-    - job_result.finished != 1
+    - vm_creation is defined
+    - vm_creation.failed | default(false)
 
 # Dry-run simulation for check mode
 - name: "Power on VM (Check Mode)"
@@ -183,7 +172,7 @@
 
 # Power on VM (idempotent - no-op if already powered on)
 - name: "Power on VM"
-  community.vmware.vmware_guest_powerstate:
+  vmware.vmware.vm_powerstate:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
@@ -194,4 +183,3 @@
   when: not ansible_check_mode
   delegate_to: localhost
   connection: local
-

@@ -2,23 +2,23 @@
 # Network Validation Tasks
 # Tests network connectivity and validates IP configuration
 
-- name: "Get VM network details via VMware Tools (for diagnostics)"
-  community.vmware.vmware_vm_shell:
-    hostname: "{{ vcenter_host }}"
-    datacenter: "{{ config_vcenter_datacenter }}"
-    vm_id: "{{ config_vm_name }}"
-    vm_username: "{{ config_vm_root_user | default('root') }}"
-    vm_password: "{{ config_vm_root_password }}"
-    vm_shell: "/bin/bash"
-    vm_shell_args: "-c 'echo \"=== Network Interfaces ===\"; ip addr show; echo \"=== Routes ===\"; ip route show; echo \"=== DNS ===\"; cat /etc/resolv.conf 2>/dev/null || echo \"No resolv.conf\"; echo \"=== Ping Gateway ===\"; ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo \"Cannot ping gateway\"'"
-    wait_for_process: true
-    timeout: 30
+# vmware_vm_shell has no equivalent in vmware.vmware - run diagnostics via SSH instead.
+- name: "Get VM network details via SSH (for diagnostics)"
+  ansible.builtin.shell: |
+    echo "=== Network Interfaces ==="
+    ip addr show
+    echo "=== Routes ==="
+    ip route show
+    echo "=== DNS ==="
+    cat /etc/resolv.conf 2>/dev/null || echo "No resolv.conf"
+    echo "=== Ping Gateway ==="
+    ping -c 2 {{ config_vm_network_gateway }} 2>&1 || echo "Cannot ping gateway"
+  delegate_to: "{{ config_vm_network_start_ip }}"
+  remote_user: "{{ config_vm_root_user | default('root') }}"
   when:
     - not ansible_check_mode
     - config_vm_root_password is defined
     - config_vm_root_password | length > 0
-  delegate_to: localhost
-  connection: local
   ignore_errors: true
   register: vm_network_diagnostics
 

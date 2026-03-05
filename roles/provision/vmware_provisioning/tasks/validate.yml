@@ -31,12 +31,11 @@
     - always
 
 - name: "Query all VMs in vCenter to check for IP conflicts"
-  community.vmware.vmware_vm_info:
+  vmware.vmware.guest_info:
     hostname: "{{ vcenter_host }}"
     username: "{{ vcenter_user }}"
     password: "{{ vcenter_user_password }}"
     validate_certs: "{{ vcenter_validate_certs }}"
-    vm_type: vm
   when: config_vm_network_start_ip is defined
   delegate_to: localhost
   ignore_errors: true
@@ -65,10 +64,10 @@
 
 - name: "Check if any VM is already using the target IP"
   ansible.builtin.set_fact:
-    conflicting_vms: "{{ all_vms_info.virtual_machines | default([]) | selectattr('guest_name', 'defined') | selectattr('ip_address', 'defined') | selectattr('ip_address', 'equalto', config_vm_network_start_ip) | list }}"
+    conflicting_vms: "{{ all_vms_info.guests | default([]) | selectattr('ipv4', 'defined') | selectattr('ipv4', 'equalto', config_vm_network_start_ip) | list }}"
   when:
     - all_vms_info is defined
-    - all_vms_info.virtual_machines is defined
+    - all_vms_info.guests is defined
     - config_vm_network_start_ip is defined
 
 # Validate domain name format
@@ -90,8 +89,8 @@
     msg:
       - "⚠️  WARNING: IP address {{ config_vm_network_start_ip }} is already assigned to another VM in vCenter!"
       - "Target VM: {{ config_vm_name }}"
-      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='guest_name') | list }}"
-      - "Power State(s): {{ conflicting_vms | map(attribute='power_state') | list }}"
+      - "Conflicting VM(s): {{ conflicting_vms | map(attribute='hw_name') | list }}"
+      - "Power State(s): {{ conflicting_vms | map(attribute='hw_power_status') | list }}"
       - "This WILL cause guest customization to fail on the new VM."
       - "Action required:"
       - "  - Change the IP address in inventory for {{ config_vm_name }}"
