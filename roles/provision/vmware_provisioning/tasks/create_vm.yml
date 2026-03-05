@@ -54,18 +54,103 @@
     - not ansible_check_mode
     - existing_vm_check is defined
 
-# Look up MOIDs needed for the clone placement spec.
-# Templates appear in the VM list endpoint.
-- name: "Find template MOID"
-  ansible.builtin.set_fact:
-    template_moid: "{{ (all_vms_list.json | default([]) | selectattr('name', 'equalto', config_vm_template) | list)[0].vm | default('') }}"
+# Templates are NOT returned by /api/vcenter/vm - they require a separate endpoint.
+# Try /api/vcenter/vm-template/library-items (content library) first,
+# then fall back to /api/vcenter/vm?filter.type=TEMPLATE (legacy .vmtx templates).
+
+# --- Content Library path ---
+- name: "List all content libraries"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: content_libraries
+  delegate_to: localhost
+  when: not ansible_check_mode
+  failed_when: false
+
+- name: "Search each content library for the template"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library/item?library_id={{ item }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: library_items_results
+  delegate_to: localhost
+  loop: "{{ content_libraries.json | default([]) }}"
   when:
     - not ansible_check_mode
-    - all_vms_list is defined
+    - content_libraries.json | default([]) | length > 0
+  failed_when: false
+
+# Each library search returns a list of item IDs - get details to match by name.
+- name: "Get details for each library item"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library/item/{{ item }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: library_item_details
+  delegate_to: localhost
+  loop: "{{ library_items_results.results | default([]) | map(attribute='json') | flatten | list }}"
+  when:
+    - not ansible_check_mode
+    - library_items_results is defined
+  failed_when: false
+
+- name: "Find template in content library by name"
+  ansible.builtin.set_fact:
+    content_library_template_id: >-
+      {{ (library_item_details.results | default([])
+          | map(attribute='json') | list
+          | selectattr('name', 'equalto', config_vm_template) | list)[0].id | default('') }}
+  when:
+    - not ansible_check_mode
+    - library_item_details is defined
+
+# --- Legacy template path (.vmtx) ---
+- name: "List legacy VM templates"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.type=TEMPLATE"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: legacy_templates
+  delegate_to: localhost
+  when: not ansible_check_mode
+  failed_when: false
+
+- name: "Find legacy template MOID by name"
+  ansible.builtin.set_fact:
+    legacy_template_moid: >-
+      {{ (legacy_templates.json | default([])
+          | selectattr('name', 'equalto', config_vm_template) | list)[0].vm | default('') }}
+  when:
+    - not ansible_check_mode
+    - legacy_templates is defined
+
+# Use content library ID if found, otherwise fall back to legacy MOID.
+- name: "Set template source"
+  ansible.builtin.set_fact:
+    template_moid: "{{ content_library_template_id | default('') or legacy_template_moid | default('') }}"
+    use_content_library: "{{ content_library_template_id | default('') != '' }}"
+  when: not ansible_check_mode
 
 - name: "Fail if template not found"
   ansible.builtin.fail:
-    msg: "Template '{{ config_vm_template }}' not found in vCenter."
+    msg: >
+      Template '{{ config_vm_template }}' not found in vCenter.
+      Checked content libraries and legacy VM templates.
+      Verify the template name matches exactly (case-sensitive) and is accessible to this user.
   when:
     - not ansible_check_mode
     - template_moid | default('') == ''
@@ -129,8 +214,59 @@
     - not ansible_check_mode
     - folder_list is defined
 
-# Clone from template using cluster placement.
-- name: "Clone VM from template (cluster)"
+# --- Content library deploy (when template is in a content library) ---
+- name: "Deploy VM from content library template (cluster)"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm-template/library-items/{{ template_moid }}?action=deploy"
+    method: POST
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    body_format: json
+    body:
+      name: "{{ config_vm_name }}"
+      placement:
+        cluster: "{{ cluster_moid }}"
+        folder: "{{ folder_moid }}"
+      powered_on: false
+      disk_storage:
+        datastore: "{{ datastore_moid }}"
+    status_code: 201
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - use_content_library | default(false)
+    - config_vcenter_resource_pool | default('') == ''
+    - existing_vm_check | default([]) | length == 0
+
+- name: "Deploy VM from content library template (resource pool)"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/vm-template/library-items/{{ template_moid }}?action=deploy"
+    method: POST
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    body_format: json
+    body:
+      name: "{{ config_vm_name }}"
+      placement:
+        resource_pool: "{{ config_vcenter_resource_pool }}"
+        folder: "{{ folder_moid }}"
+      powered_on: false
+      disk_storage:
+        datastore: "{{ datastore_moid }}"
+    status_code: 201
+  register: vm_creation
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - use_content_library | default(false)
+    - config_vcenter_resource_pool | default('') != ''
+    - existing_vm_check | default([]) | length == 0
+
+# --- Legacy clone (when template is a .vmtx legacy template) ---
+- name: "Clone VM from legacy template (cluster)"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
     method: POST
@@ -151,11 +287,11 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
+    - not use_content_library | default(false)
     - config_vcenter_resource_pool | default('') == ''
     - existing_vm_check | default([]) | length == 0
 
-# Clone from template using resource pool placement.
-- name: "Clone VM from template (resource pool)"
+- name: "Clone VM from legacy template (resource pool)"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
     method: POST
@@ -176,6 +312,7 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
+    - not use_content_library | default(false)
     - config_vcenter_resource_pool | default('') != ''
     - existing_vm_check | default([]) | length == 0
 
