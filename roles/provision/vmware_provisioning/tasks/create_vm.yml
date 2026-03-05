@@ -12,6 +12,9 @@
 - name: "Check if VM already exists"
   community.vmware.vmware_guest_info:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
   register: existing_vm_check
@@ -36,6 +39,9 @@
 - name: "Clone VM from template with inline customization"
   community.vmware.vmware_guest:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     template: "{{ config_vm_template }}"
     datacenter: "{{ config_vcenter_datacenter }}"
@@ -69,6 +75,8 @@
   connection: local
 
 # Poll async job until completion or timeout
+# failed_when catches immediate job failures (e.g. missing Python library) so
+# the loop exits on the first poll rather than retrying until timeout.
 - name: "Wait for VM creation to complete"
   ansible.builtin.async_status:
     jid: "{{ vm_creation.ansible_job_id }}"
@@ -76,6 +84,7 @@
   until: job_result.finished
   retries: "{{ config_vm_async_retries | int }}"
   delay: "{{ config_vm_async_delay | int }}"
+  failed_when: job_result.finished and job_result.failed | default(false)
   when:
     - not ansible_check_mode
     - vm_creation.ansible_job_id is defined
@@ -176,6 +185,9 @@
 - name: "Power on VM"
   community.vmware.vmware_guest_powerstate:
     hostname: "{{ vcenter_host }}"
+    username: "{{ vcenter_user }}"
+    password: "{{ vcenter_user_password }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
     name: "{{ config_vm_name }}"
     datacenter: "{{ config_vcenter_datacenter }}"
     state: powered-on
