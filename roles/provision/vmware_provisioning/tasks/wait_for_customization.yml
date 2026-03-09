@@ -2,35 +2,36 @@
 # Uses ansible.builtin.uri (Python urllib stdlib) - no aiohttp or pyvmomi needed.
 # Session token passed in from create_vm.yml via vcenter_session variable.
 
-# Poll until VM is powered on.
+# Poll VM power state directly by MOID — avoids fetching all VMs on every retry.
 - name: "Wait for VM to be powered on"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/power"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
+    timeout: 30
   register: vm_power_check
-  until: >
-    vm_power_check.json | default([]) |
-    selectattr('name', 'equalto', config_vm_name) | list | length > 0 and
-    (vm_power_check.json | selectattr('name', 'equalto', config_vm_name) | list)[0].power_state == "POWERED_ON"
+  until: vm_power_check.json.state is defined and vm_power_check.json.state == "POWERED_ON"
   retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
-  when: not ansible_check_mode
+  when:
+    - not ansible_check_mode
+    - new_vm_id is defined
   delegate_to: localhost
   failed_when: false
 
 # Poll guest networking until expected IP appears.
 - name: "Wait for VM to obtain correct IP address"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/networking"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/networking"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
+    timeout: 30
   register: vm_network_info
   until: >
     vm_network_info.json is defined and
@@ -40,7 +41,7 @@
   delay: 15
   when:
     - not ansible_check_mode
-    - vm_creation.json is defined
+    - new_vm_id is defined
   delegate_to: localhost
   failed_when: false
 

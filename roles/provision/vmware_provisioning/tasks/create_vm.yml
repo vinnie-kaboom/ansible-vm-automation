@@ -37,14 +37,11 @@
   delegate_to: localhost
   when: not ansible_check_mode
 
+
 - name: "Check if VM already exists"
   ansible.builtin.set_fact:
     existing_vm_check:
-      json: >-
-        {{ all_vms.json | default([])
-           | selectattr('name', 'equalto', config_vm_name)
-           | rejectattr('vm_type', 'equalto', 'VIRTUAL_MACHINE_TEMPLATE')
-           | list }}
+      json: "{{ all_vms.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
   when: not ansible_check_mode
 
 - name: "Display existing VM status"
@@ -57,22 +54,68 @@
     - not ansible_check_mode
     - existing_vm_check is defined
 
-# /api/vcenter/vm returns both VMs and templates. Filter client-side by name.
-# Templates are identified by vm_type == 'VIRTUAL_MACHINE_TEMPLATE' in the response.
-
-# Look up MOIDs needed for the clone placement spec.
-- name: "Look up template MOID"
-  ansible.builtin.set_fact:
-    template_info:
-      json: "{{ all_vms.json | default([]) | selectattr('name', 'equalto', config_vm_template) | list }}"
+# Template is in a Content Library. Look it up via the Content Library API.
+- name: "List all content libraries"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: content_libraries
+  delegate_to: localhost
   when: not ansible_check_mode
 
-- name: "Fail if template not found"
+- name: "List items in each content library"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library/item?library_id={{ item }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: library_items_results
+  loop: "{{ content_libraries.json | default([]) }}"
+  delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Get details for each library item"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/content/library/item/{{ item }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: library_item_details
+  loop: >-
+    {{
+      library_items_results.results | default([])
+      | selectattr('json', 'defined')
+      | map(attribute='json') | flatten
+    }}
+  delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Find template in content library by name"
+  ansible.builtin.set_fact:
+    content_library_item_id: >-
+      {{
+        (library_item_details.results | default([])
+        | selectattr('json', 'defined')
+        | map(attribute='json')
+        | selectattr('name', 'equalto', config_vm_template)
+        | list | first).id | default('')
+      }}
+  when: not ansible_check_mode
+
+- name: "Fail if template not found in content library"
   ansible.builtin.fail:
-    msg: "Template '{{ config_vm_template }}' not found in vCenter. Verify the name matches exactly as it appears in the vCenter inventory."
+    msg: "Template '{{ config_vm_template }}' not found in any Content Library."
   when:
     - not ansible_check_mode
-    - template_info.json | default([]) | length == 0
+    - content_library_item_id | default('') == ''
 
 - name: "List all datastores"
   ansible.builtin.uri:
@@ -114,9 +157,56 @@
     - not ansible_check_mode
     - config_vcenter_resource_pool | default('') == ''
 
-- name: "List all VM folders"
+# OVF deploy target requires resource_pool_id, not cluster_id.
+# Each cluster has a root resource pool named 'Resources'.
+- name: "List all resource pools"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/folder?filter.type=VIRTUAL_MACHINE"
+    url: "https://{{ vcenter_host }}/api/vcenter/resource-pool"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: all_resource_pools
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') == ''
+
+# Get resource pool details to match against cluster MOID.
+- name: "Get root resource pool details for cluster"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/resource-pool/{{ item.resource_pool }}"
+    method: GET
+    headers:
+      vmware-api-session-id: "{{ vcenter_session.json }}"
+    validate_certs: "{{ vcenter_validate_certs }}"
+    status_code: 200
+  register: resource_pool_details
+  loop: "{{ all_resource_pools.json | default([]) | selectattr('name', 'equalto', 'Resources') | list }}"
+  delegate_to: localhost
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') == ''
+
+- name: "Look up root resource pool for cluster"
+  ansible.builtin.set_fact:
+    cluster_resource_pool_id: >-
+      {{
+        (resource_pool_details.results | default([])
+        | selectattr('json', 'defined')
+        | map(attribute='json')
+        | selectattr('resource_pools', 'defined')
+        | list | first | default({})).resource_pool
+        | default(all_resource_pools.json[0].resource_pool)
+      }}
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') == ''
+
+- name: "List all folders"
+  ansible.builtin.uri:
+    url: "https://{{ vcenter_host }}/api/vcenter/folder"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -132,24 +222,29 @@
       json: "{{ all_folders.json | default([]) | selectattr('name', 'equalto', config_vm_folder) | list }}"
   when: not ansible_check_mode
 
-# Clone from template using cluster placement.
-- name: "Clone VM from template (cluster)"
+
+# Deploy from Content Library template using cluster placement.
+# Deploy from Content Library template using cluster placement.
+# Item type is OVF — use the OVF deploy endpoint.
+- name: "Deploy VM from OVF library item (cluster)"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
+    url: "https://{{ vcenter_host }}/api/vcenter/ovf/library-item/{{ content_library_item_id }}?action=deploy"
     method: POST
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     body_format: json
     body:
-      name: "{{ config_vm_name }}"
-      source: "{{ template_info.json[0].vm }}"
-      placement:
-        cluster: "{{ cluster_info.json[0].cluster }}"
-        datastore: "{{ datastore_info.json[0].datastore }}"
-        folder: "{{ folder_info.json[0].folder }}"
-      power_on: false
-    status_code: 201
+      deployment_spec:
+        name: "{{ config_vm_name }}"
+        accept_all_EULA: true
+        default_datastore_id: "{{ datastore_info.json[0].datastore }}"
+        storage_provisioning: thin
+      target:
+        resource_pool_id: "{{ cluster_resource_pool_id }}"
+        folder_id: "{{ folder_info.json[0].folder }}"
+    status_code: 200
+    timeout: 300
   register: vm_creation
   delegate_to: localhost
   when:
@@ -157,24 +252,26 @@
     - config_vcenter_resource_pool | default('') == ''
     - existing_vm_check.json | default([]) | length == 0
 
-# Clone from template using resource pool placement.
-- name: "Clone VM from template (resource pool)"
+# Deploy OVF using resource pool placement.
+- name: "Deploy VM from OVF library item (resource pool)"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?action=clone"
+    url: "https://{{ vcenter_host }}/api/vcenter/ovf/library-item/{{ content_library_item_id }}?action=deploy"
     method: POST
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     body_format: json
     body:
-      name: "{{ config_vm_name }}"
-      source: "{{ template_info.json[0].vm }}"
-      placement:
-        resource_pool: "{{ config_vcenter_resource_pool }}"
-        datastore: "{{ datastore_info.json[0].datastore }}"
-        folder: "{{ folder_info.json[0].folder }}"
-      power_on: false
-    status_code: 201
+      deployment_spec:
+        name: "{{ config_vm_name }}"
+        accept_all_EULA: true
+        default_datastore_id: "{{ datastore_info.json[0].datastore }}"
+        storage_provisioning: thin
+      target:
+        resource_pool_id: "{{ config_vcenter_resource_pool }}"
+        folder_id: "{{ folder_info.json[0].folder }}"
+    status_code: 200
+    timeout: 300
   register: vm_creation
   delegate_to: localhost
   when:
@@ -182,10 +279,28 @@
     - config_vcenter_resource_pool | default('') != ''
     - existing_vm_check.json | default([]) | length == 0
 
+# The deploy API returns {"vm_id": "vm-XXXXX"} — extract it for downstream tasks.
+# OVF deploy returns {"succeeded": true, "resource_id": {"type": "VirtualMachine", "id": "vm-XXXXX"}}
+- name: "DEBUG: Show deploy result"
+  ansible.builtin.debug:
+    var: vm_creation
+  when:
+    - not ansible_check_mode
+    - vm_creation is defined
+
+- name: "Set VM MOID from deploy result"
+  ansible.builtin.set_fact:
+    new_vm_id: "{{ vm_creation.json.resource_id.id | default(vm_creation.json.vm_id) | default(vm_creation.json) }}"
+  when:
+    - not ansible_check_mode
+    - vm_creation is defined
+    - vm_creation.json is defined
+    - vm_creation.status == 200
+
 # Apply Linux OS customization before first power-on.
 - name: "Apply Linux guest customization"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/customization"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/customization"
     method: PUT
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -203,19 +318,34 @@
         dns_suffix_list:
           - "{{ config_vm_domain }}"
         dns_servers: "{{ config_vm_network_dns_servers }}"
-      interfaces: []
+      interfaces:
+        - adapter:
+            ip:
+              type: STATIC
+              static_addr:
+                ip_address: "{{ config_vm_network_start_ip }}"
+                prefix: >-
+                  {{
+                    config_vm_network_prefix | default(
+                      {'255.255.255.0': 24, '255.255.255.128': 25, '255.255.255.192': 26,
+                       '255.255.255.224': 27, '255.255.255.240': 28, '255.255.254.0': 23,
+                       '255.255.252.0': 22, '255.255.248.0': 21, '255.255.240.0': 20,
+                       '255.255.0.0': 16, '255.254.0.0': 15, '255.0.0.0': 8}[config_vm_network_netmask] | default(24)
+                    ) | int
+                  }}
+            gateway: "{{ config_vm_network_gateway }}"
     status_code: 204
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_creation.json is defined
+    - new_vm_id is defined
     - config_vm_os is defined
     - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
 
 # Apply Windows sysprep customization before first power-on.
 - name: "Apply Windows guest customization"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/guest/customization"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/customization"
     method: PUT
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -247,7 +377,7 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_creation.json is defined
+    - new_vm_id is defined
     - config_vm_os is defined
     - "'Windows' in config_vm_os"
 
@@ -258,7 +388,7 @@
 
 - name: "Power on VM"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ vm_creation.json }}/power?action=start"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/power?action=start"
     method: POST
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -267,7 +397,7 @@
   delegate_to: localhost
   when:
     - not ansible_check_mode
-    - vm_creation.json is defined
+    - new_vm_id is defined
 
 - name: "Display VM creation result"
   ansible.builtin.debug:
@@ -277,7 +407,7 @@
       - "========================================="
       - "VM Name: {{ config_vm_name }}"
       - "Template: {{ config_vm_template }}"
-      - "VM MOID: {{ vm_creation.json | default('N/A') }}"
+      - "VM MOID: {{ new_vm_id | default('N/A') }}"
       - "Status: {{ 'SUCCESS' if (vm_creation is defined and not vm_creation.failed | default(false)) else 'FAILED' }}"
       - "Datacenter: {{ config_vcenter_datacenter }}"
       - "Cluster: {{ config_vcenter_cluster }}"
