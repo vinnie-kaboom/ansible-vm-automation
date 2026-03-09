@@ -14,3 +14,7 @@ config_vcenter_resource_pool: ""
 # Zone‑wide template and environment
 config_vm_template: "xxxxxxxxxxxxxxxxxxxxxxxxxxx"
 config_vm_environment: "xxxxxxxxxxxxxxxxxx"
+
+# Optional: name of the Content Library containing config_vm_template.
+# Leave empty to search all libraries.
+config_vm_content_library: ""

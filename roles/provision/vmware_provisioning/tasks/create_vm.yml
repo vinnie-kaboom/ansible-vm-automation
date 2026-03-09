@@ -22,7 +22,10 @@
   when: not ansible_check_mode
   no_log: true
 
-- name: "List all VMs"
+# vCenter rejects all filter.* query params on /api/vcenter/vm.
+# Fetch everything and filter client-side. The response includes both VMs and templates;
+# templates are identified by vm_type == 'VIRTUAL_MACHINE_TEMPLATE'.
+- name: "List all VMs and templates"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
@@ -37,7 +40,11 @@
 - name: "Check if VM already exists"
   ansible.builtin.set_fact:
     existing_vm_check:
-      json: "{{ all_vms.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
+      json: >-
+        {{ all_vms.json | default([])
+           | selectattr('name', 'equalto', config_vm_name)
+           | rejectattr('vm_type', 'equalto', 'VIRTUAL_MACHINE_TEMPLATE')
+           | list }}
   when: not ansible_check_mode
 
 - name: "Display existing VM status"
@@ -50,6 +57,9 @@
     - not ansible_check_mode
     - existing_vm_check is defined
 
+# /api/vcenter/vm returns both VMs and templates. Filter client-side by name.
+# Templates are identified by vm_type == 'VIRTUAL_MACHINE_TEMPLATE' in the response.
+
 # Look up MOIDs needed for the clone placement spec.
 - name: "Look up template MOID"
   ansible.builtin.set_fact:
@@ -59,7 +69,7 @@
 
 - name: "Fail if template not found"
   ansible.builtin.fail:
-    msg: "Template '{{ config_vm_template }}' not found in vCenter."
+    msg: "Template '{{ config_vm_template }}' not found in vCenter. Verify the name matches exactly as it appears in the vCenter inventory."
   when:
     - not ansible_check_mode
     - template_info.json | default([]) | length == 0
