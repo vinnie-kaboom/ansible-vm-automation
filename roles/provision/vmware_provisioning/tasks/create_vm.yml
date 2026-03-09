@@ -22,17 +22,22 @@
   when: not ansible_check_mode
   no_log: true
 
-- name: "Check if VM already exists"
+- name: "List all VMs"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: existing_vm_check
+  register: all_vms
   delegate_to: localhost
-  ignore_errors: true
+  when: not ansible_check_mode
+
+- name: "Check if VM already exists"
+  ansible.builtin.set_fact:
+    existing_vm_check:
+      json: "{{ all_vms.json | default([]) | selectattr('name', 'equalto', config_vm_name) | list }}"
   when: not ansible_check_mode
 
 - name: "Display existing VM status"
@@ -47,15 +52,9 @@
 
 # Look up MOIDs needed for the clone placement spec.
 - name: "Look up template MOID"
-  ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_template | urlencode }}"
-    method: GET
-    headers:
-      vmware-api-session-id: "{{ vcenter_session.json }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    status_code: 200
-  register: template_info
-  delegate_to: localhost
+  ansible.builtin.set_fact:
+    template_info:
+      json: "{{ all_vms.json | default([]) | selectattr('name', 'equalto', config_vm_template) | list }}"
   when: not ansible_check_mode
 
 - name: "Fail if template not found"
@@ -65,42 +64,62 @@
     - not ansible_check_mode
     - template_info.json | default([]) | length == 0
 
-- name: "Look up datastore MOID"
+- name: "List all datastores"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/datastore?filter.names={{ config_vcenter_datastore | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/datastore"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: datastore_info
+  register: all_datastores
   delegate_to: localhost
   when: not ansible_check_mode
 
-- name: "Look up cluster MOID"
+- name: "Look up datastore MOID"
+  ansible.builtin.set_fact:
+    datastore_info:
+      json: "{{ all_datastores.json | default([]) | selectattr('name', 'equalto', config_vcenter_datastore) | list }}"
+  when: not ansible_check_mode
+
+- name: "List all clusters"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/cluster?filter.names={{ config_vcenter_cluster | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/cluster"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: cluster_info
+  register: all_clusters
   delegate_to: localhost
   when:
     - not ansible_check_mode
     - config_vcenter_resource_pool | default('') == ''
 
-- name: "Look up VM folder MOID"
+- name: "Look up cluster MOID"
+  ansible.builtin.set_fact:
+    cluster_info:
+      json: "{{ all_clusters.json | default([]) | selectattr('name', 'equalto', config_vcenter_cluster) | list }}"
+  when:
+    - not ansible_check_mode
+    - config_vcenter_resource_pool | default('') == ''
+
+- name: "List all VM folders"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/folder?filter.names={{ config_vm_folder | urlencode }}&filter.type=VIRTUAL_MACHINE"
+    url: "https://{{ vcenter_host }}/api/vcenter/folder?filter.type=VIRTUAL_MACHINE"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: folder_info
+  register: all_folders
   delegate_to: localhost
+  when: not ansible_check_mode
+
+- name: "Look up VM folder MOID"
+  ansible.builtin.set_fact:
+    folder_info:
+      json: "{{ all_folders.json | default([]) | selectattr('name', 'equalto', config_vm_folder) | list }}"
   when: not ansible_check_mode
 
 # Clone from template using cluster placement.

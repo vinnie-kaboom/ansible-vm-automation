@@ -1,33 +1,42 @@
+---
 name: VM Provisioning Workflow
 
 on:
   pull_request:
     types: [opened, synchronize, reopened]
   push:
-    branches: [main]
+    branches: [staging]
 
 jobs:
-  # Environmental checks and provisioning prechecks - runs on PR creation/update
-  pr-validation:
-    name: 🔍 PR Validation - Prechecks
+  validation:
+    name: Validate Configuration
     if: ${{ github.event_name == 'pull_request' }}
     uses: operations-support/ansible-golden/.github/workflows/vm-operations.yml@main
     secrets: inherit
     with:
       playbook: 'playbooks/site.yml'
       tags: 'validation'
-      limit: 'runner'
+      limit: 'all_servers'
       check_mode: false
 
-  # Actual VM provisioning and post-provision checks - runs when PR is merged to main
-  vm-provisioning:
-    name: 🚀 VM Provisioning - Create VMs
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+  provision-staging:
+    name: Provision VMs (staging)
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' }}
     uses: operations-support/ansible-golden/.github/workflows/vm-operations.yml@main
     secrets: inherit
     with:
       playbook: 'playbooks/site.yml'
-      tags: 'provision,status,validation'
-      limit: 'xxxxxxxxxxxxx01_green_linux'
+      tags: 'validation,vm-operations,status'
+      limit: 'all_servers'
       check_mode: false
+
+  domain-join-staging:
+    name: Join Domain (staging)
+    needs: provision-staging
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/staging' && needs.provision-staging.result == 'success' }}
+    uses: operations-support/ansible-golden/.github/workflows/join_operations.yml@main
+    secrets: inherit
+    with:
+      playbook: 'playbooks/site.yml'
+      tags: 'domain_join'
 

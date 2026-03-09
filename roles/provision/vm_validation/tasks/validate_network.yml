@@ -16,14 +16,19 @@
 
     - name: "Get vCenter network list"
       ansible.builtin.uri:
-        url: "https://{{ vcenter_host }}/api/vcenter/network?filter.names={{ config_vm_network | urlencode }}"
+        url: "https://{{ vcenter_host }}/api/vcenter/network"
         method: GET
         headers:
           vmware-api-session-id: "{{ net_session.json }}"
         validate_certs: "{{ vcenter_validate_certs | default(false) }}"
         status_code: 200
       delegate_to: localhost
-      register: network_info
+      register: all_networks
+
+    - name: "Filter network by name"
+      ansible.builtin.set_fact:
+        network_info:
+          json: "{{ all_networks.json | default([]) | selectattr('name', 'equalto', config_vm_network) | list }}"
 
     - name: "Validate that network exists in vCenter"
       ansible.builtin.assert:

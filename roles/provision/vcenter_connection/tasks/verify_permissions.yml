@@ -37,16 +37,23 @@
   when: vcenter_validation_check_api_version | default(true) | bool
   tags: [vcenter, permissions, api_version]
 
-- name: "Check datacenter access"
+- name: "List all datacenters"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/datacenter?filter.names={{ config_vcenter_datacenter | default('') | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/datacenter"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: datacenter_access
+  register: all_datacenters
   delegate_to: localhost
+  when: vcenter_validation_check_datacenter_access | default(true) | bool
+  tags: [vcenter, permissions, datacenter]
+
+- name: "Check datacenter access"
+  ansible.builtin.set_fact:
+    datacenter_access:
+      json: "{{ all_datacenters.json | default([]) | selectattr('name', 'equalto', config_vcenter_datacenter | default('')) | list }}"
   when: vcenter_validation_check_datacenter_access | default(true) | bool
   tags: [vcenter, permissions, datacenter]
 
@@ -61,16 +68,23 @@
     - datacenter_access is not skipped
   tags: [vcenter, permissions, datacenter]
 
-- name: "Check cluster access"
+- name: "List all clusters"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/cluster?filter.names={{ config_vcenter_cluster | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/cluster"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: cluster_access
+  register: all_clusters
   delegate_to: localhost
+  when: vcenter_validation_check_cluster_access | default(true) | bool
+  tags: [vcenter, permissions, cluster]
+
+- name: "Check cluster access"
+  ansible.builtin.set_fact:
+    cluster_access:
+      json: "{{ all_clusters.json | default([]) | selectattr('name', 'equalto', config_vcenter_cluster) | list }}"
   when: vcenter_validation_check_cluster_access | default(true) | bool
   tags: [vcenter, permissions, cluster]
 
@@ -85,16 +99,23 @@
     - cluster_access is not skipped
   tags: [vcenter, permissions, cluster]
 
-- name: "Check datastore access"
+- name: "List all datastores"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/datastore?filter.names={{ config_vcenter_datastore | default('') | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/datastore"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
-  register: datastore_access
+  register: all_datastores
   delegate_to: localhost
+  when: config_vcenter_datastore | default('') != ''
+  tags: [vcenter, permissions, datastore]
+
+- name: "Check datastore access"
+  ansible.builtin.set_fact:
+    datastore_access:
+      json: "{{ all_datastores.json | default([]) | selectattr('name', 'equalto', config_vcenter_datastore | default('')) | list }}"
   when: config_vcenter_datastore | default('') != ''
   tags: [vcenter, permissions, datastore]
 

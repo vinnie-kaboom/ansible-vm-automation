@@ -5,7 +5,7 @@
 # Poll until VM is powered on.
 - name: "Wait for VM to be powered on"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm?filter.names={{ config_vm_name | urlencode }}"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
@@ -13,8 +13,9 @@
     status_code: 200
   register: vm_power_check
   until: >
-    vm_power_check.json | default([]) | length > 0 and
-    vm_power_check.json[0].power_state == "POWERED_ON"
+    vm_power_check.json | default([]) |
+    selectattr('name', 'equalto', config_vm_name) | list | length > 0 and
+    (vm_power_check.json | selectattr('name', 'equalto', config_vm_name) | list)[0].power_state == "POWERED_ON"
   retries: "{{ config_vm_wait_for_guest_state_retries | int }}"
   delay: "{{ config_vm_wait_for_guest_state_delay | int }}"
   when: not ansible_check_mode
