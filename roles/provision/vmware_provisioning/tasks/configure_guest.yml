@@ -54,7 +54,7 @@
   ansible.builtin.shell: |
     export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
     echo "user=$(id -u)"
-    if command -v nmcli >/dev/null 2>&1; then
+    if [ -x /usr/bin/nmcli ] || [ -x /usr/sbin/nmcli ]; then
       echo "method=nmcli"
     elif [ -d /etc/sysconfig/network-scripts ]; then
       echo "method=ifcfg"
