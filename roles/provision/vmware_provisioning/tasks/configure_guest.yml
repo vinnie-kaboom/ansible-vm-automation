@@ -231,7 +231,26 @@
     - not ansible_check_mode
     - _net_method | default('') == 'netplan'
 
-# --- Method 4: ip command fallback (minimal systems) ---
+# --- Method 4: sysctl-only IPv6 disable (no iproute2, IP already set by guest customization) ---
+- name: "Disable IPv6 via sysctl (no iproute2 available)"
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+  ansible.builtin.shell: |
+    export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
+    /usr/sbin/sysctl -w net.ipv6.conf.all.disable_ipv6=1
+    /usr/sbin/sysctl -w net.ipv6.conf.default.disable_ipv6=1
+    mkdir -p /etc/sysctl.d
+    printf 'net.ipv6.conf.all.disable_ipv6 = 1\nnet.ipv6.conf.default.disable_ipv6 = 1\n' > /etc/sysctl.d/99-disable-ipv6.conf
+  register: sysctl_only_result
+  failed_when: sysctl_only_result.rc != 0
+  when:
+    - not ansible_check_mode
+    - _net_method | default('') == 'ip'
+
+# --- ip command fallback disabled — iproute2 not available on this template ---
 - name: "Configure static IP and disable IPv6 using ip commands"
   become: "{{ not (_is_root | bool) }}"
   become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
@@ -272,7 +291,7 @@
   failed_when: ip_result.rc != 0
   when:
     - not ansible_check_mode
-    - _net_method | default('') == 'ip'
+    - _net_method | default('') == 'ip_disabled'
 
 - name: "Display static IP configuration result"
   ansible.builtin.debug:
