@@ -93,8 +93,8 @@
 
 # --- Method 1: nmcli (NetworkManager) ---
 - name: "Configure static IP and disable IPv6 using nmcli"
-  become: "{{ not (_is_root | bool) }}"
-  become_method: "{{ _become_method if _become_method != 'none' else 'sudo' }}"
+  become: true
+  become_method: sudo
   become_user: root
   vars:
     ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
