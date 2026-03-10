@@ -224,7 +224,6 @@
 
 
 # Deploy from Content Library template using cluster placement.
-# Deploy from Content Library template using cluster placement.
 # Item type is OVF — use the OVF deploy endpoint.
 - name: "Deploy VM from OVF library item (cluster)"
   ansible.builtin.uri:
@@ -245,7 +244,7 @@
         folder_id: "{{ folder_info.json[0].folder }}"
     status_code: 200
     timeout: 300
-  register: vm_creation
+  register: vm_creation_cluster
   delegate_to: localhost
   when:
     - not ansible_check_mode
@@ -272,11 +271,18 @@
         folder_id: "{{ folder_info.json[0].folder }}"
     status_code: 200
     timeout: 300
-  register: vm_creation
+  register: vm_creation_rp
   delegate_to: localhost
   when:
     - not ansible_check_mode
     - config_vcenter_resource_pool | default('') != ''
+    - existing_vm_check.json | default([]) | length == 0
+
+- name: "Set vm_creation from whichever deploy ran"
+  ansible.builtin.set_fact:
+    vm_creation: "{{ vm_creation_cluster if (vm_creation_cluster is defined and vm_creation_cluster is not skipped) else vm_creation_rp }}"
+  when:
+    - not ansible_check_mode
     - existing_vm_check.json | default([]) | length == 0
 
 # The deploy API returns {"vm_id": "vm-XXXXX"} — extract it for downstream tasks.
@@ -339,8 +345,7 @@
   when:
     - not ansible_check_mode
     - new_vm_id is defined
-    - config_vm_os is defined
-    - "'Linux' in config_vm_os or 'RHEL' in config_vm_os"
+    - not (config_vm_os | default('Linux') is search('Windows'))
 
 # Apply Windows sysprep customization before first power-on.
 - name: "Apply Windows guest customization"
