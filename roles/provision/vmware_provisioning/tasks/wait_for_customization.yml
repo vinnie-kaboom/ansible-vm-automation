@@ -22,23 +22,24 @@
   delegate_to: localhost
   failed_when: false
 
-# Poll guest networking until expected IP appears.
+# /api/vcenter/vm/{id}/guest/identity returns a flat { "ip_address": "x.x.x.x", ... }
+# once VMware Tools reports the guest IP after customization completes and reboots.
 - name: "Wait for VM to obtain correct IP address"
   ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/networking"
+    url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/identity"
     method: GET
     headers:
       vmware-api-session-id: "{{ vcenter_session.json }}"
     validate_certs: "{{ vcenter_validate_certs }}"
     status_code: 200
     timeout: 30
-  register: vm_network_info
+  register: vm_identity_info
   until: >
-    vm_network_info.json is defined and
-    vm_network_info.json.ip_address is defined and
-    vm_network_info.json.ip_address == config_vm_network_start_ip
-  retries: 20
-  delay: 15
+    vm_identity_info.json is defined and
+    vm_identity_info.json.ip_address is defined and
+    vm_identity_info.json.ip_address == config_vm_network_start_ip
+  retries: 30
+  delay: 20
   when:
     - not ansible_check_mode
     - new_vm_id is defined
@@ -52,11 +53,12 @@
 
 - name: "Set IP check facts"
   ansible.builtin.set_fact:
-    vm_has_correct_ip: "{{ vm_network_info.json.ip_address | default('') == config_vm_network_start_ip }}"
-    vm_has_any_ip: "{{ vm_network_info.json.ip_address | default('') | length > 0 }}"
+    vm_has_correct_ip: "{{ vm_identity_info.json.ip_address | default('') == config_vm_network_start_ip }}"
+    vm_has_any_ip: "{{ vm_identity_info.json.ip_address | default('') | length > 0 }}"
+    vm_reported_ips: "{{ [vm_identity_info.json.ip_address] if vm_identity_info.json.ip_address is defined else [] }}"
   when:
     - not ansible_check_mode
-    - vm_network_info is defined
+    - vm_identity_info is defined
 
 - name: "Display IP check result"
   ansible.builtin.debug:
@@ -65,7 +67,7 @@
       - "VM Network Configuration Status"
       - "========================================="
       - "Expected IP: {{ config_vm_network_start_ip }}"
-      - "Actual IP: {{ vm_network_info.json.ip_address | default('No IP assigned') }}"
+      - "Reported IP: {{ vm_identity_info.json.ip_address | default('No IP assigned') }}"
       - "Network: {{ config_vm_network }}"
       - "Gateway: {{ config_vm_network_gateway }}"
       - "Netmask: {{ config_vm_network_netmask }}"

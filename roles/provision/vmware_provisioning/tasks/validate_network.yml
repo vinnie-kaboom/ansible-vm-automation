@@ -36,20 +36,21 @@
       succeeded: "{{ vm_has_correct_ip | default(false) }}"
   when: not ansible_check_mode
 
-- name: "Test network connectivity to VM (ICMP ping)"
-  ansible.builtin.command:
-    cmd: "ping -c 3 -W 2 {{ config_vm_network_start_ip }}"
+- name: "Test network connectivity to VM (TCP port 22)"
+  ansible.builtin.wait_for:
+    host: "{{ config_vm_network_start_ip }}"
+    port: 22
+    timeout: 10
+    state: started
   when: not ansible_check_mode
   delegate_to: localhost
-  connection: local
   ignore_errors: true
   register: ping_result
-  changed_when: false
 
 - name: "Set VM pingable status"
   ansible.builtin.set_fact:
-    vm_is_pingable: "{{ ping_result.rc == 0 }}"
-    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['Network connectivity failed - VM not reachable via ping'] if ping_result.rc != 0 else []) }}"
+    vm_is_pingable: "{{ ping_result.failed is defined and not ping_result.failed }}"
+    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['Network connectivity failed - VM not reachable on port 22'] if (ping_result.failed | default(true)) else []) }}"
   when: not ansible_check_mode
 
 - name: "Display ping result"
@@ -59,7 +60,7 @@
       - "Network Connectivity Test"
       - "========================================="
       - "Target: {{ config_vm_network_start_ip }}"
-      - "Result: {{ '✅ SUCCESS - VM is reachable' if ping_result.rc == 0 else '❌ FAILED - VM is NOT reachable' }}"
-      - "{{ 'SSH check will proceed' if ping_result.rc == 0 else 'SSH check will be SKIPPED (no network connectivity)' }}"
+      - "Result: {{ '✅ SUCCESS - VM is reachable on port 22' if vm_is_pingable else '❌ FAILED - VM is NOT reachable on port 22' }}"
+      - "{{ 'SSH check will proceed' if vm_is_pingable else 'SSH check will be SKIPPED (no network connectivity)' }}"
       - "========================================="
   when: not ansible_check_mode
