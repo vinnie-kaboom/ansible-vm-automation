@@ -26,38 +26,6 @@
     success_msg: "vCenter connection variables are set."
   tags: [validation, always]
 
-# Authenticate once - session token reused for all subsequent API calls.
-- name: "Authenticate to vCenter REST API"
-  ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/session"
-    method: POST
-    user: "{{ vcenter_user }}"
-    password: "{{ vcenter_user_password }}"
-    force_basic_auth: true
-    validate_certs: "{{ vcenter_validate_certs }}"
-    status_code: 201
-  register: vcenter_session
-  delegate_to: localhost
-  ignore_errors: true
-  when: config_vm_network_start_ip is defined
-  no_log: true
-
-- name: "List all VMs in vCenter"
-  ansible.builtin.uri:
-    url: "https://{{ vcenter_host }}/api/vcenter/vm"
-    method: GET
-    headers:
-      vmware-api-session-id: "{{ vcenter_session.json }}"
-    validate_certs: "{{ vcenter_validate_certs }}"
-    status_code: 200
-  register: all_vms_info
-  delegate_to: localhost
-  ignore_errors: true
-  when:
-    - config_vm_network_start_ip is defined
-    - vcenter_session is defined
-    - not vcenter_session.failed | default(true)
-
 - name: "Validate VM hostname format"
   ansible.builtin.assert:
     that:
@@ -76,23 +44,6 @@
     success_msg: "Hostname '{{ config_vm_name }}' is RFC-compliant"
   tags: [validation, always]
 
-- name: "Check if any VM is already using the target name"
-  ansible.builtin.set_fact:
-    # all_vms_info.json may be a list of dicts (with 'name' key) or plain strings depending on API version.
-    conflicting_vms: >-
-      {{
-        all_vms_info.json | default([]) |
-        selectattr('name', 'defined') |
-        selectattr('name', 'equalto', config_vm_name) | list
-        if (all_vms_info.json | default([]) | length > 0 and
-            all_vms_info.json[0] is mapping)
-        else []
-      }}
-  when:
-    - all_vms_info is defined
-    - all_vms_info.json is defined
-    - config_vm_name is defined
-
 - name: "Validate domain name format"
   ansible.builtin.assert:
     that:
@@ -103,16 +54,6 @@
     success_msg: "Domain name '{{ config_vm_domain }}' is valid"
   when: config_vm_domain is defined
   tags: [validation, always]
-
-- name: "Warn if VM name is already in use"
-  ansible.builtin.debug:
-    msg:
-      - "WARNING: A VM named {{ config_vm_name }} already exists in vCenter!"
-      - "Power State: {{ conflicting_vms[0].power_state | default('unknown') }}"
-      - "This will cause the clone operation to fail."
-  when:
-    - conflicting_vms is defined
-    - conflicting_vms | length > 0
 
 - name: "Validate network configuration"
   ansible.builtin.assert:
