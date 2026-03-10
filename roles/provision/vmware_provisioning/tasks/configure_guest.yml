@@ -107,8 +107,9 @@
     PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
     PREFIX="${PREFIX:-24}"
 
-    # Find the connection name for ens192 (varies by VMware customization)
-    CONN_NAME=$(nmcli -t -f NAME,DEVICE connection show | grep ':ens192$' | head -1 | cut -d: -f1)
+    # Find the connection name for ens192 — match on DEVICE field (4th column in terse mode)
+    # VMware customization names it "VMware customization ens192"
+    CONN_NAME=$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
     CONN_NAME="${CONN_NAME:-ens192}"
 
     nmcli connection modify "${CONN_NAME}" \
