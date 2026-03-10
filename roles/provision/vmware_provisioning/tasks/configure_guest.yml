@@ -38,6 +38,7 @@
     ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   ansible.builtin.shell: |
+    export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
     echo "user=$(id -u)"
     if command -v nmcli >/dev/null 2>&1; then
       echo "method=nmcli"
@@ -87,6 +88,7 @@
     ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   ansible.builtin.shell: |
+    export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
     set -e
     PREFIX=$(ipcalc -p 0.0.0.0 {{ config_vm_network_netmask }} 2>/dev/null | awk -F= '/PREFIX/{print $2}')
     PREFIX="${PREFIX:-24}"
