@@ -1,6 +1,7 @@
 ---
 # Network Validation Tasks
-# Tests network connectivity and validates IP configuration
+# Runs diagnostics inside the guest via SSH for informational purposes.
+# Reachability check (port 22) is handled in validate_ssh.yml.
 
 # vmware_vm_shell has no equivalent in vmware.vmware - run diagnostics via SSH instead.
 - name: "Get VM network details via SSH (for diagnostics)"
@@ -24,7 +25,7 @@
 
 - name: "Display VM internal network diagnostics"
   ansible.builtin.debug:
-    msg: "{{ vm_network_diagnostics.stdout_lines | default(['Diagnostics failed - check VM credentials']) }}"
+    msg: "{{ vm_network_diagnostics.stdout_lines | default(['Diagnostics skipped - check VM credentials']) }}"
   when:
     - not ansible_check_mode
     - vm_network_diagnostics is defined
@@ -34,33 +35,4 @@
     ip_check:
       failed: "{{ not (vm_has_correct_ip | default(false)) }}"
       succeeded: "{{ vm_has_correct_ip | default(false) }}"
-  when: not ansible_check_mode
-
-- name: "Test network connectivity to VM (TCP port 22)"
-  ansible.builtin.wait_for:
-    host: "{{ config_vm_network_start_ip }}"
-    port: 22
-    timeout: 10
-    state: started
-  when: not ansible_check_mode
-  delegate_to: localhost
-  ignore_errors: true
-  register: ping_result
-
-- name: "Set VM pingable status"
-  ansible.builtin.set_fact:
-    vm_is_pingable: "{{ ping_result.failed is defined and not ping_result.failed }}"
-    vm_provisioning_issues: "{{ vm_provisioning_issues | default([]) + (['Network connectivity failed - VM not reachable on port 22'] if (ping_result.failed | default(true)) else []) }}"
-  when: not ansible_check_mode
-
-- name: "Display ping result"
-  ansible.builtin.debug:
-    msg:
-      - "========================================="
-      - "Network Connectivity Test"
-      - "========================================="
-      - "Target: {{ config_vm_network_start_ip }}"
-      - "Result: {{ '✅ SUCCESS - VM is reachable on port 22' if vm_is_pingable else '❌ FAILED - VM is NOT reachable on port 22' }}"
-      - "{{ 'SSH check will proceed' if vm_is_pingable else 'SSH check will be SKIPPED (no network connectivity)' }}"
-      - "========================================="
   when: not ansible_check_mode
