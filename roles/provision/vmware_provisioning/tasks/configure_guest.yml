@@ -15,21 +15,30 @@
   register: ssh_wait_result
   failed_when: false
 
+- name: "Set guest credentials for delegation"
+  ansible.builtin.set_fact:
+    _guest_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    _guest_pass: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    _guest_become_pass: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+  when: not ansible_check_mode
+  no_log: true
+
 - name: "Disable IPv6 via nmcli"
   ansible.builtin.shell: >-
-    sshpass -p {{ secrets.ANSIBLE_SSH_PASS | default('') | quote }}
+    sshpass -p {{ _guest_pass | quote }}
     ssh -o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null
-    {{ secrets.ANSIBLE_USER | default('tmpadmin') }}@{{ config_vm_network_start_ip }}
+    {{ _guest_user }}@{{ config_vm_network_start_ip }}
     "CONN=\$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '\$4==\"ens192\"{print \$1}' | head -1);
     CONN=\${CONN:-ens192};
-    echo {{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) | quote }} | sudo -S nmcli connection modify \"\$CONN\" ipv6.method disabled &&
-    echo {{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) | quote }} | sudo -S nmcli connection up \"\$CONN\""
+    echo {{ _guest_become_pass | quote }} | sudo -S nmcli connection modify \"\$CONN\" ipv6.method disabled &&
+    echo {{ _guest_become_pass | quote }} | sudo -S nmcli connection up \"\$CONN\""
   delegate_to: localhost
   when:
     - not ansible_check_mode
     - ssh_wait_result is success
   register: ipv6_result
   changed_when: true
+  no_log: true
 
 - name: "Display guest configuration result"
   ansible.builtin.debug:
