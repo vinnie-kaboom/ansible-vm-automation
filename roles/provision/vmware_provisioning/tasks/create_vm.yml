@@ -316,7 +316,7 @@
     - target_network_id | default('') != ''
     - vm_nics is defined
 
-# Apply Linux guest customization
+# Apply guest customization only on freshly deployed VMs
 - name: "Apply Linux guest customization"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/guest/customization"
@@ -361,6 +361,7 @@
   when:
     - not ansible_check_mode
     - new_vm_id is defined
+    - existing_vm_check.json | default([]) | length == 0
     - not (config_vm_os | default('Linux') is search('Windows'))
 
 # Apply Windows guest customization
@@ -400,10 +401,11 @@
   when:
     - not ansible_check_mode
     - new_vm_id is defined
+    - existing_vm_check.json | default([]) | length == 0
     - config_vm_os is defined
     - "'Windows' in config_vm_os"
 
-# Power on VM
+# Power on VM (only if freshly deployed)
 - name: "Power on VM"
   ansible.builtin.uri:
     url: "https://{{ vcenter_host }}/api/vcenter/vm/{{ new_vm_id }}/power?action=start"
@@ -416,6 +418,7 @@
   when:
     - not ansible_check_mode
     - new_vm_id is defined
+    - existing_vm_check.json | default([]) | length == 0
 
 # Display result
 - name: "Display VM creation result"
