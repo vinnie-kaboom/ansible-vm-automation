@@ -138,8 +138,12 @@
 
 - name: "Look up datastore MOID"
   ansible.builtin.set_fact:
-    datastore_info:
-      json: "{{ all_datastores.json | default([]) | selectattr('name', 'equalto', config_vcenter_datastore) | list }}"
+    datastore_moid: >-
+      {{
+        (all_datastores.json | default([]) |
+        selectattr('name', 'equalto', config_vcenter_datastore) |
+        list | first).datastore | default('') | regex_replace(':.*$', '')
+      }}
   when: not ansible_check_mode
 
 # Cluster / resource pool lookup
@@ -218,7 +222,7 @@
       deployment_spec:
         name: "{{ config_vm_name }}"
         accept_all_EULA: true
-        default_datastore_id: "{{ datastore_info.json[0].datastore }}"
+        default_datastore_id: "{{ datastore_moid }}"
         storage_provisioning: thin
       target:
         resource_pool_id: "{{ cluster_resource_pool_id }}"
