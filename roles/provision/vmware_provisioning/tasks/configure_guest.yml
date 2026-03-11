@@ -25,11 +25,10 @@
     ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   ansible.builtin.shell: |
-    export PATH="/usr/sbin:/usr/bin:/sbin:/bin:$PATH"
-    CONN_NAME=$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
+    CONN_NAME=$(/bin/nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
     CONN_NAME="${CONN_NAME:-ens192}"
-    nmcli connection modify "${CONN_NAME}" ipv6.method disabled
-    nmcli connection up "${CONN_NAME}"
+    /bin/nmcli connection modify "${CONN_NAME}" ipv6.method disabled
+    /bin/nmcli connection up "${CONN_NAME}"
   when:
     - not ansible_check_mode
     - ssh_wait_result is success
