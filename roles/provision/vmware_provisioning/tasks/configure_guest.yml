@@ -15,41 +15,18 @@
   register: ssh_wait_result
   failed_when: false
 
-- name: "Debug nmcli location"
-  vars:
-    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
-    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
-    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-  ansible.builtin.shell: |
-    echo "hostname=$(hostname)"
-    echo "whoami=$(whoami)"
-    find /usr/bin /usr/sbin /bin /sbin -name nmcli 2>/dev/null || echo "nmcli not found"
-    ls -la /usr/bin/nmcli 2>/dev/null || echo "/usr/bin/nmcli missing"
-  when: not ansible_check_mode
-  register: nmcli_debug
-  changed_when: false
-  failed_when: false
-
-- name: "Show nmcli debug"
-  ansible.builtin.debug:
-    var: nmcli_debug.stdout_lines
-  when: not ansible_check_mode
 
 - name: "Disable IPv6 via nmcli"
-  become: true
-  become_method: sudo
-  become_user: root
   vars:
     ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
     ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
     ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
   ansible.builtin.shell: |
-    /usr/bin/nmcli connection modify \
-      "$(/usr/bin/nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)" \
-      ipv6.method disabled
-    /usr/bin/nmcli connection up \
-      "$(/usr/bin/nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)"
+    CONN_NAME=$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
+    CONN_NAME="${CONN_NAME:-ens192}"
+    echo "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}" | sudo -S nmcli connection modify "${CONN_NAME}" ipv6.method disabled
+    echo "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}" | sudo -S nmcli connection up "${CONN_NAME}"
   when:
     - not ansible_check_mode
     - ssh_wait_result is success
