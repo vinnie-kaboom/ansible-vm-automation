@@ -38,7 +38,6 @@
     - ssh_wait_result is success
   register: ipv6_result
   changed_when: true
-  no_log: true
 
 - name: "Display guest configuration result"
   ansible.builtin.debug:
