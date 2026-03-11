@@ -248,6 +248,7 @@
   when:
     - not ansible_check_mode
     - vm_creation is defined
+    - not vm_creation.skipped | default(false)
     - vm_creation.status in [200, 201]
 
 # Reassign NIC to correct port group (OVF deploy inherits template's network)
