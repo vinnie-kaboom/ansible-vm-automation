@@ -142,7 +142,7 @@
       {{
         (all_datastores.json | default([]) |
         selectattr('name', 'equalto', config_vcenter_datastore) |
-        list | first).datastore | default('') | regex_replace(':.*$', '')
+        list | first).datastore | default('') | split(':') | first
       }}
   when: not ansible_check_mode
 
