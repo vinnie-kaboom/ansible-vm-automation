@@ -28,3 +28,36 @@
         vcenter_datacenter: "{{ config_vcenter_datacenter }}"
         vcenter_cluster: "{{ config_vcenter_cluster }}"
         vcenter_datastore: "{{ config_vcenter_datastore }}"
+
+- name: "Configure provisioned Linux VM"
+  hosts: "{{ ansible_host | default('all') }}:!runner"
+  any_errors_fatal: false
+  gather_facts: false
+  connection: ssh
+  serial: "{{ vm_parallel_count | default(1) }}"
+  tags: [provision, linux, guest_config]
+
+  vars:
+    ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
+    ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
+    ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
+    ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
+
+  tasks:
+    - name: "Disable IPv6 via nmcli"
+      become: true
+      become_method: sudo
+      become_user: root
+      ansible.builtin.shell: |
+        CONN_NAME=$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
+        CONN_NAME="${CONN_NAME:-ens192}"
+        nmcli connection modify "${CONN_NAME}" ipv6.method disabled
+        nmcli connection up "${CONN_NAME}"
+      register: ipv6_result
+      changed_when: true
+      tags: [provision, linux, guest_config]
+
+    - name: "Display IPv6 disable result"
+      ansible.builtin.debug:
+        msg: "IPv6 disabled on {{ inventory_hostname }}"
+      tags: [provision, linux, guest_config]
