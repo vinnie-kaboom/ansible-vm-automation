@@ -2,8 +2,8 @@
 # Configure guest OS after provisioning.
 # Static IP is already set by VMware guest customization.
 # This task disables IPv6 via nmcli (RHEL 9 with NetworkManager).
-# Note: provision_linux_vm.yml uses connection: local, so SSH tasks
-# must explicitly set connection: ssh and provide credentials.
+# Note: provision_linux_vm.yml uses connection: local for the entire play.
+# We add the VM IP to in-memory inventory and delegate to it directly.
 
 - name: "Wait for SSH to become available on new VM"
   ansible.builtin.wait_for:
@@ -17,22 +17,25 @@
   register: ssh_wait_result
   failed_when: false
 
-- name: "Disable IPv6 via nmcli"
-  connection: ssh
-  vars:
+- name: "Add VM to in-memory inventory for SSH tasks"
+  ansible.builtin.add_host:
+    name: "vm_guest_target"
     ansible_host: "{{ config_vm_network_start_ip }}"
     ansible_user: "{{ secrets.ANSIBLE_USER | default('tmpadmin') }}"
     ansible_password: "{{ secrets.ANSIBLE_SSH_PASS | default('') }}"
     ansible_become_password: "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}"
     ansible_ssh_common_args: '-o StrictHostKeyChecking=no -o UserKnownHostsFile=/dev/null'
-  become: true
-  become_method: sudo
-  become_user: root
+    ansible_connection: ssh
+  when: not ansible_check_mode
+  changed_when: false
+
+- name: "Disable IPv6 via nmcli"
   ansible.builtin.shell: |
     CONN_NAME=$(nmcli -t -f NAME,UUID,TYPE,DEVICE connection show | awk -F: '$4=="ens192"{print $1}' | head -1)
     CONN_NAME="${CONN_NAME:-ens192}"
-    nmcli connection modify "${CONN_NAME}" ipv6.method disabled
-    nmcli connection up "${CONN_NAME}"
+    echo "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}" | sudo -S nmcli connection modify "${CONN_NAME}" ipv6.method disabled
+    echo "{{ secrets.ANSIBLE_BECOME_PASS | default(secrets.ANSIBLE_SSH_PASS | default('')) }}" | sudo -S nmcli connection up "${CONN_NAME}"
+  delegate_to: vm_guest_target
   when:
     - not ansible_check_mode
     - ssh_wait_result is success
